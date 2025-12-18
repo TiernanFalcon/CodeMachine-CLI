@@ -29,6 +29,12 @@ export interface RunCodexOptions {
 export interface RunCodexResult {
   stdout: string;
   stderr: string;
+  /** True if the engine hit a rate limit */
+  isRateLimitError?: boolean;
+  /** When the rate limit resets (if known) */
+  rateLimitResetsAt?: Date;
+  /** Retry-after duration in seconds (if provided by API) */
+  retryAfterSeconds?: number;
 }
 
 const ANSI_ESCAPE_SEQUENCE = new RegExp(String.raw`\u001B\[[0-9;?]*[ -/]*[@-~]`, 'g');
@@ -255,6 +261,37 @@ export async function runCodex(options: RunCodexOptions): Promise<RunCodexResult
     const errorOutput = capturedError || result.stderr.trim() || result.stdout.trim() || 'no error output';
     const lines = errorOutput.split('\n').slice(0, 10);
     const preview = lines.join('\n');
+
+    // Check for rate limit errors
+    const isRateLimitError =
+      preview.toLowerCase().includes('rate limit') ||
+      preview.includes('429') ||
+      preview.toLowerCase().includes('too many requests') ||
+      preview.toLowerCase().includes('quota exceeded');
+
+    if (isRateLimitError) {
+      // Try to extract retry-after from error message
+      let retryAfterSeconds: number | undefined;
+      const retryMatch = preview.match(/retry.{0,10}?(\d+)\s*(?:second|sec|s)/i);
+      if (retryMatch) {
+        retryAfterSeconds = parseInt(retryMatch[1], 10);
+      }
+
+      if (onErrorData) {
+        onErrorData(`\n[RATE LIMIT] ${preview}\n`);
+      }
+
+      return {
+        stdout: result.stdout,
+        stderr: result.stderr,
+        isRateLimitError: true,
+        retryAfterSeconds,
+        rateLimitResetsAt: retryAfterSeconds
+          ? new Date(Date.now() + retryAfterSeconds * 1000)
+          : undefined,
+      };
+    }
+
     throw new Error(preview);
   }
 

@@ -34,6 +34,12 @@ export interface RunClaudeOptions {
 export interface RunClaudeResult {
   stdout: string;
   stderr: string;
+  /** True if the engine hit a rate limit */
+  isRateLimitError?: boolean;
+  /** When the rate limit resets (if known) */
+  rateLimitResetsAt?: Date;
+  /** Retry-after duration in seconds (if provided by API) */
+  retryAfterSeconds?: number;
 }
 
 const ANSI_ESCAPE_SEQUENCE = new RegExp(String.raw`\u001B\[[0-9;?]*[ -/]*[@-~]`, 'g');
@@ -265,6 +271,8 @@ export async function runClaude(options: RunClaudeOptions): Promise<RunClaudeRes
   if (result.exitCode !== 0 || capturedError) {
     // Use captured error from streaming, or fall back to parsing output
     let errorMessage = capturedError || `Claude CLI exited with code ${result.exitCode}`;
+    let isRateLimitError = false;
+    let retryAfterSeconds: number | undefined;
 
     if (!capturedError) {
       const errorOutput = result.stderr.trim() || result.stdout.trim() || 'no error output';
@@ -278,6 +286,11 @@ export async function runClaude(options: RunClaudeOptions): Promise<RunClaudeRes
             // Check for error in result type
             if (json.type === 'result' && json.is_error && json.result) {
               errorMessage = json.result;
+              // Check if it's a rate limit error message
+              if (errorMessage.toLowerCase().includes('rate limit') ||
+                  errorMessage.toLowerCase().includes('too many requests')) {
+                isRateLimitError = true;
+              }
               break;
             }
 
@@ -288,10 +301,23 @@ export async function runClaude(options: RunClaudeOptions): Promise<RunClaudeRes
                 errorMessage = messageText;
               } else if (json.error === 'rate_limit') {
                 errorMessage = 'Rate limit reached. Please try again later.';
+                isRateLimitError = true;
+                // Try to extract retry-after from error details
+                if (json.retry_after) {
+                  retryAfterSeconds = json.retry_after;
+                }
               } else {
                 errorMessage = json.error;
               }
               break;
+            }
+
+            // Check for rate limit specific error type
+            if (json.error?.type === 'rate_limit_error' || json.error === 'rate_limit') {
+              isRateLimitError = true;
+              if (json.error?.retry_after) {
+                retryAfterSeconds = json.error.retry_after;
+              }
             }
           }
         }
@@ -301,7 +327,29 @@ export async function runClaude(options: RunClaudeOptions): Promise<RunClaudeRes
         if (lines.length > 0 && lines[0]) {
           errorMessage = lines.join('\n');
         }
+        // Check raw output for rate limit indicators
+        if (errorMessage.toLowerCase().includes('rate limit') ||
+            errorMessage.includes('429') ||
+            errorMessage.toLowerCase().includes('too many requests')) {
+          isRateLimitError = true;
+        }
       }
+    }
+
+    // If it's a rate limit error, return result with flag instead of throwing
+    if (isRateLimitError) {
+      if (onErrorData) {
+        onErrorData(`\n[RATE LIMIT] ${errorMessage}\n`);
+      }
+      return {
+        stdout: result.stdout,
+        stderr: result.stderr,
+        isRateLimitError: true,
+        retryAfterSeconds,
+        rateLimitResetsAt: retryAfterSeconds
+          ? new Date(Date.now() + retryAfterSeconds * 1000)
+          : undefined,
+      };
     }
 
     // Send error to stderr callback if provided

@@ -89,7 +89,12 @@ export type WorkflowEvent =
   | { type: 'ui:element'; element: UIElementInfo }
 
   // Monitoring ID registration (for log file access)
-  | { type: 'monitoring:register'; uiAgentId: string; monitoringId: number };
+  | { type: 'monitoring:register'; uiAgentId: string; monitoringId: number }
+
+  // Engine rate limit events
+  | { type: 'engine:rate-limited'; engineId: string; resetsAt?: Date; retryAfterSeconds?: number }
+  | { type: 'engine:available'; engineId: string }
+  | { type: 'engine:fallback'; fromEngine: string; toEngine: string; reason: string };
 
 /**
  * Extract event type from WorkflowEvent union
