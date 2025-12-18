@@ -94,14 +94,16 @@ describe('Engine Fallback', () => {
       expect(result.engineUsed).toBe('mock');
     });
 
-    it('throws when engine not found', async () => {
-      await expect(
-        runWithFallback({
-          primaryEngine: 'nonexistent-engine',
-          runOptions: { prompt: 'Test', workingDir: tempDir },
-          rateLimitManager
-        })
-      ).rejects.toThrow(/Engine not found/);
+    it('returns exhausted result when engine not found', async () => {
+      const result = await runWithFallback({
+        primaryEngine: 'nonexistent-engine',
+        runOptions: { prompt: 'Test', workingDir: tempDir },
+        rateLimitManager
+      });
+
+      // New behavior: returns allEnginesExhausted instead of throwing
+      expect(result.allEnginesExhausted).toBe(true);
+      expect(result.engineUsed).toBe('nonexistent-engine');
     });
   });
 

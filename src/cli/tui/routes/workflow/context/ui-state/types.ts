@@ -8,6 +8,7 @@ import type {
   LoopState,
   ChainedState,
   InputState,
+  RateLimitState,
   SubAgentState,
   TriggeredAgentState,
   WorkflowStatus,
@@ -42,6 +43,7 @@ export type UIActions = {
   setWorkflowStatus(status: WorkflowStatus): void
   setCheckpointState(checkpoint: { active: boolean; reason?: string } | null): void
   setInputState(inputState: InputState | null): void
+  setRateLimitState(rateLimitState: RateLimitState | null): void
   /** @deprecated Use setInputState instead */
   setChainedState(chainedState: ChainedState | null): void
   registerMonitoringId(uiAgentId: string, monitoringId: number): void
@@ -52,4 +54,4 @@ export type UIActions = {
   setAutonomousMode(enabled: boolean): void
 }
 
-export type { WorkflowState, AgentStatus, LoopState, ChainedState, InputState, SubAgentState, TriggeredAgentState, WorkflowStatus }
+export type { WorkflowState, AgentStatus, LoopState, ChainedState, InputState, RateLimitState, SubAgentState, TriggeredAgentState, WorkflowStatus }

@@ -4,7 +4,7 @@
  * Actions for managing workflow status and checkpoint state.
  */
 
-import type { WorkflowState, WorkflowStatus, LoopState, ChainedState, InputState, TriggeredAgentState } from "../types"
+import type { WorkflowState, WorkflowStatus, LoopState, ChainedState, InputState, RateLimitState, TriggeredAgentState } from "../types"
 
 export type WorkflowActionsContext = {
   getState(): WorkflowState
@@ -45,6 +45,17 @@ export function createWorkflowActions(ctx: WorkflowActionsContext) {
         setWorkflowStatus("paused")
       }
       // With queue (chained prompts), keep current status
+    } else {
+      setWorkflowStatus("running")
+    }
+    ctx.notify()
+  }
+
+  function setRateLimitState(rateLimitState: RateLimitState | null): void {
+    const state = ctx.getState()
+    ctx.setState({ ...state, rateLimitState })
+    if (rateLimitState && rateLimitState.active) {
+      setWorkflowStatus("rate_limit_waiting")
     } else {
       setWorkflowStatus("running")
     }
@@ -132,6 +143,7 @@ export function createWorkflowActions(ctx: WorkflowActionsContext) {
     setWorkflowStatus,
     setCheckpointState,
     setInputState,
+    setRateLimitState,
     setChainedState,
     setLoopState,
     clearLoopRound,

@@ -59,11 +59,24 @@ export interface LoopState {
   reason?: string
 }
 
-export type WorkflowStatus = "running" | "stopping" | "completed" | "stopped" | "checkpoint" | "paused" | "error"
+export type WorkflowStatus = "running" | "stopping" | "completed" | "stopped" | "checkpoint" | "paused" | "error" | "rate_limit_waiting"
 
 export interface CheckpointState {
   active: boolean
   reason?: string
+}
+
+/**
+ * Rate limit waiting state - when all engines are rate-limited
+ */
+export interface RateLimitState {
+  active: boolean
+  /** When the soonest engine resets */
+  resetsAt?: Date
+  /** Which engine will reset first */
+  engineId?: string
+  /** List of all rate-limited engines */
+  rateLimitedEngines?: string[]
 }
 
 export interface QueuedPrompt {
@@ -136,6 +149,7 @@ export interface WorkflowState {
   loopState: LoopState | null
   checkpointState: CheckpointState | null
   inputState: InputState | null
+  rateLimitState: RateLimitState | null
   /** @deprecated Use inputState instead */
   chainedState: ChainedState | null
   expandedNodes: Set<string>

@@ -35,6 +35,7 @@ export interface ModuleStep {
   model?: string;
   modelReasoningEffort?: 'low' | 'medium' | 'high';
   engine?: string; // Dynamic engine type from registry
+  fallbackChain?: string[]; // Ordered list of fallback engine IDs (e.g., ['claude', 'gemini', 'codex'])
   module?: ModuleMetadata;
   executeOnce?: boolean;
   notCompletedFallback?: string; // Agent ID to run if step is in notCompletedSteps

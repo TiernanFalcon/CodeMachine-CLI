@@ -19,6 +19,8 @@ import type { WorkflowEventEmitter } from '../events/index.js';
 export interface RunWithFallbackOptions {
   /** Primary engine to try first */
   primaryEngine: string;
+  /** Ordered list of fallback engines to try (after primary) */
+  fallbackChain?: string[];
   /** Engine run options */
   runOptions: EngineRunOptions;
   /** Rate limit manager instance */
@@ -41,20 +43,27 @@ export interface RunWithFallbackResult extends EngineRunResult {
   fellBack: boolean;
   /** Engines that were rate-limited during this attempt */
   rateLimitedEngines: string[];
+  /** If all engines exhausted, when the soonest one resets */
+  allEnginesExhausted?: boolean;
+  /** Soonest reset time if all engines exhausted */
+  soonestResetAt?: Date;
+  /** Engine ID that will reset soonest */
+  soonestResetEngine?: string;
 }
 
 /**
  * Run engine with automatic fallback on rate limit
  *
- * Tries the primary engine first. If rate limited, marks it unavailable
- * and tries the next authenticated engine. Continues until success or
- * all engines are exhausted.
+ * Tries the primary engine first, then each engine in the fallback chain.
+ * If all are rate limited, returns with allEnginesExhausted=true and
+ * the soonest reset time so the workflow can wait.
  */
 export async function runWithFallback(
   options: RunWithFallbackOptions
 ): Promise<RunWithFallbackResult> {
   const {
     primaryEngine,
+    fallbackChain = [],
     runOptions,
     rateLimitManager,
     emitter,
@@ -62,41 +71,46 @@ export async function runWithFallback(
     maxAttempts = 3,
   } = options;
 
+  // Build the full engine list: primary + fallback chain
+  const engineList = [primaryEngine, ...fallbackChain.filter(e => e !== primaryEngine)];
   const rateLimitedEngines: string[] = [];
-  let currentEngine = primaryEngine;
   let attempts = 0;
+  let engineIndex = 0;
 
-  while (attempts < maxAttempts) {
+  while (attempts < maxAttempts && engineIndex < engineList.length) {
+    const currentEngine = engineList[engineIndex];
     attempts++;
 
     // Check if current engine is rate-limited
     if (!rateLimitManager.isEngineAvailable(currentEngine)) {
       const waitTime = rateLimitManager.getTimeUntilAvailable(currentEngine);
-      debug('[EngineFallback] Engine %s is rate-limited (wait %ds), trying next', currentEngine, waitTime);
+      debug('[EngineFallback] Engine %s is rate-limited (wait %ds), trying next in chain', currentEngine, waitTime);
 
       if (emitter && agentId) {
         emitter.logMessage(agentId, `⏳ ${currentEngine} is rate-limited (${waitTime}s remaining), trying fallback...`);
       }
 
-      // Find next available engine
-      const nextEngine = await findNextAvailableEngine(currentEngine, rateLimitManager);
-      if (!nextEngine) {
-        throw new Error(
-          `All engines are rate-limited. ${currentEngine} resets in ${waitTime}s.`
-        );
-      }
-
-      currentEngine = nextEngine;
-      if (emitter && agentId) {
-        emitter.logMessage(agentId, `🔄 Falling back to ${currentEngine}`);
-      }
+      rateLimitedEngines.push(currentEngine);
+      engineIndex++;
       continue;
     }
 
-    // Get engine and run
+    // Check if engine is authenticated
     const engine = registry.get(currentEngine);
     if (!engine) {
-      throw new Error(`Engine not found: ${currentEngine}`);
+      debug('[EngineFallback] Engine %s not found, skipping', currentEngine);
+      engineIndex++;
+      continue;
+    }
+
+    const isAuthed = await authCache.isAuthenticated(
+      currentEngine,
+      () => engine.auth.isAuthenticated()
+    );
+    if (!isAuthed) {
+      debug('[EngineFallback] Engine %s not authenticated, skipping', currentEngine);
+      engineIndex++;
+      continue;
     }
 
     debug('[EngineFallback] Attempting engine %s (attempt %d/%d)', currentEngine, attempts, maxAttempts);
@@ -123,22 +137,7 @@ export async function runWithFallback(
           emitter.logMessage(agentId, `⚠️ ${currentEngine} rate limited ${resetInfo}`);
         }
 
-        // Find next available engine
-        const nextEngine = await findNextAvailableEngine(currentEngine, rateLimitManager);
-        if (!nextEngine) {
-          // No fallback available - return the rate limit result
-          return {
-            ...result,
-            engineUsed: currentEngine,
-            fellBack: rateLimitedEngines.length > 0,
-            rateLimitedEngines,
-          };
-        }
-
-        currentEngine = nextEngine;
-        if (emitter && agentId) {
-          emitter.logMessage(agentId, `🔄 Switching to ${currentEngine}`);
-        }
+        engineIndex++;
         continue;
       }
 
@@ -162,15 +161,11 @@ export async function runWithFallback(
         await rateLimitManager.markRateLimited(currentEngine);
         rateLimitedEngines.push(currentEngine);
 
-        const nextEngine = await findNextAvailableEngine(currentEngine, rateLimitManager);
-        if (!nextEngine) {
-          throw error; // Re-throw if no fallback
+        if (emitter && agentId) {
+          emitter.logMessage(agentId, `🔄 Rate limit error on ${currentEngine}, trying next...`);
         }
 
-        currentEngine = nextEngine;
-        if (emitter && agentId) {
-          emitter.logMessage(agentId, `🔄 Rate limit error, switching to ${currentEngine}`);
-        }
+        engineIndex++;
         continue;
       }
 
@@ -179,7 +174,50 @@ export async function runWithFallback(
     }
   }
 
-  throw new Error(`Failed after ${maxAttempts} attempts. Rate-limited engines: ${rateLimitedEngines.join(', ')}`);
+  // All engines exhausted - find the soonest reset time
+  const { soonestEngine, soonestResetAt } = findSoonestReset(engineList, rateLimitManager);
+
+  if (emitter && agentId && soonestResetAt) {
+    const waitSeconds = Math.ceil((soonestResetAt.getTime() - Date.now()) / 1000);
+    emitter.logMessage(agentId, `⏳ All engines rate-limited. ${soonestEngine} resets in ${waitSeconds}s`);
+  }
+
+  // Return a result indicating we need to wait
+  return {
+    stdout: '',
+    stderr: 'All engines in fallback chain are rate-limited',
+    engineUsed: primaryEngine,
+    fellBack: true,
+    rateLimitedEngines,
+    allEnginesExhausted: true,
+    soonestResetAt,
+    soonestResetEngine: soonestEngine,
+    isRateLimitError: true,
+  };
+}
+
+/**
+ * Find the engine that will reset soonest
+ */
+function findSoonestReset(
+  engines: string[],
+  rateLimitManager: RateLimitManager
+): { soonestEngine: string | undefined; soonestResetAt: Date | undefined } {
+  let soonestEngine: string | undefined;
+  let soonestResetAt: Date | undefined;
+
+  for (const engineId of engines) {
+    const waitTime = rateLimitManager.getTimeUntilAvailable(engineId);
+    if (waitTime > 0) {
+      const resetAt = new Date(Date.now() + waitTime * 1000);
+      if (!soonestResetAt || resetAt < soonestResetAt) {
+        soonestResetAt = resetAt;
+        soonestEngine = engineId;
+      }
+    }
+  }
+
+  return { soonestEngine, soonestResetAt };
 }
 
 /**
