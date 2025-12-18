@@ -36,6 +36,9 @@ export interface UIActions {
     agentId: string,
     telemetry: { tokensIn?: number; tokensOut?: number; cached?: number; cost?: number }
   ): void
+  updateAgentGoal(agentId: string, goal: string): void
+  updateAgentCurrentFile(agentId: string, currentFile: string): void
+  updateAgentCurrentAction(agentId: string, currentAction: string): void
   setLoopState(loopState: LoopState | null): void
   clearLoopRound(agentId: string): void
   addSubAgent(parentId: string, subAgent: SubAgentState): void
@@ -144,6 +147,18 @@ export class OpenTUIAdapter extends BaseUIAdapter {
 
       case "agent:reset":
         this.actions.resetAgentForLoop(event.agentId, event.cycleNumber)
+        break
+
+      case "agent:goal":
+        this.actions.updateAgentGoal(event.agentId, event.goal)
+        break
+
+      case "agent:current-file":
+        this.actions.updateAgentCurrentFile(event.agentId, event.file)
+        break
+
+      case "agent:current-action":
+        this.actions.updateAgentCurrentAction(event.agentId, event.action)
         break
 
       // Sub-agent events

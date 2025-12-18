@@ -23,6 +23,9 @@ export type UIActions = {
   updateAgentEngine(agentId: string, engine: string): void
   updateAgentModel(agentId: string, model: string): void
   updateAgentTelemetry(agentId: string, telemetry: Partial<WorkflowState["agents"][number]["telemetry"]>): void
+  updateAgentGoal(agentId: string, goal: string): void
+  updateAgentCurrentFile(agentId: string, currentFile: string): void
+  updateAgentCurrentAction(agentId: string, currentAction: string): void
   setLoopState(loopState: LoopState | null): void
   clearLoopRound(agentId: string): void
   addSubAgent(parentId: string, subAgent: SubAgentState): void

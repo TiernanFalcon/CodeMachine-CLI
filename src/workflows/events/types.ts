@@ -50,6 +50,9 @@ export type WorkflowEvent =
   | { type: 'agent:model'; agentId: string; model: string }
   | { type: 'agent:telemetry'; agentId: string; telemetry: Partial<AgentTelemetry> }
   | { type: 'agent:reset'; agentId: string; cycleNumber?: number }
+  | { type: 'agent:goal'; agentId: string; goal: string }
+  | { type: 'agent:current-file'; agentId: string; file: string }
+  | { type: 'agent:current-action'; agentId: string; action: string }
 
   // Sub-agent events
   | { type: 'subagent:added'; parentId: string; subAgent: SubAgentState }

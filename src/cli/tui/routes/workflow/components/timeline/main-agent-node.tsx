@@ -116,6 +116,19 @@ export function MainAgentNode(props: MainAgentNodeProps) {
         </Show>
       </box>
 
+      {/* Context line (goal, file, action) */}
+      <Show when={props.agent.goal || props.agent.currentFile || props.agent.currentAction}>
+        <box paddingLeft={4}>
+          <text fg={themeCtx.theme.textMuted} wrapMode="none">
+            {props.agent.goal && `Goal: ${truncate(props.agent.goal, 40)}`}
+            {props.agent.goal && (props.agent.currentFile || props.agent.currentAction) && " | "}
+            {props.agent.currentFile && `File: ${truncate(props.agent.currentFile, 30)}`}
+            {props.agent.currentFile && props.agent.currentAction && " | "}
+            {props.agent.currentAction && truncate(props.agent.currentAction, 40)}
+          </text>
+        </box>
+      </Show>
+
       {/* Loop cycle line (if in loop) */}
       <Show when={hasLoopRound()}>
         <box paddingLeft={2}>
