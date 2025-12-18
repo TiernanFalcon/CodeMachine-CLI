@@ -374,10 +374,8 @@ export class WorkflowRunner {
         await generateStepSummary({
           step,
           output: stepOutput,
-          uniqueAgentId,
           stepIndex: ctx.currentStepIndex,
           savePath: summaryPath,
-          cwd: this.cwd
         });
         debug('[Runner] Step summary generated: %s', summaryPath);
       } catch (summaryError) {

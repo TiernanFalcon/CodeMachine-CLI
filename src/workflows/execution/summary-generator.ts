@@ -10,10 +10,8 @@ import { AgentMonitorService } from '../../agents/monitoring/monitor.js';
 export interface GenerateStepSummaryOptions {
   step: WorkflowStep;
   output: StepOutput;
-  uniqueAgentId: string;
   stepIndex: number;
   savePath: string;
-  cwd: string;
 }
 
 /**
@@ -124,11 +122,11 @@ function formatCost(cost?: number): string {
  * Generate a markdown summary for a single step
  */
 export async function generateStepSummary(options: GenerateStepSummaryOptions): Promise<void> {
-  const { step, output, uniqueAgentId, stepIndex, savePath, cwd } = options;
+  const { step, output, stepIndex, savePath } = options;
 
-  // Get agent data from monitoring service
+  // Get agent data from monitoring service using the monitoringId from step output
   const monitorService = AgentMonitorService.getInstance();
-  const agentData = monitorService.getAgent(parseInt(uniqueAgentId));
+  const agentData = output.monitoringId ? monitorService.getAgent(output.monitoringId) : undefined;
 
   // Parse output for file operations
   const files = parseAgentOutput(output.output);
