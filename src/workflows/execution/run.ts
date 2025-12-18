@@ -23,6 +23,13 @@ import { MonitoringCleanup } from '../../agents/monitoring/index.js';
 import { WorkflowEventBus, WorkflowEventEmitter } from '../events/index.js';
 import { validateSpecification } from '../../runtime/services/index.js';
 import { WorkflowRunner } from './runner.js';
+import {
+  setEngineSelectionContext,
+  clearEngineSelectionContext,
+  loadEngineConfig,
+  type EngineSelectionContext,
+} from './engine-presets.js';
+import { setEngineConfigFile, clearEngineConfigFile } from './engine.js';
 
 export { validateSpecification, ValidationError } from '../../runtime/services/index.js';
 export type { WorkflowStep, WorkflowTemplate };
@@ -58,6 +65,23 @@ export async function runWorkflow(options: RunWorkflowOptions = {}): Promise<voi
   const { template } = await loadTemplateWithPath(cwd, templatePath);
 
   debug('[Workflow] Using template: %s', template.name);
+
+  // Set up engine selection context from CLI options
+  const engineConfig = await loadEngineConfig(cmRoot);
+  setEngineConfigFile(engineConfig);
+
+  if (options.engineOverride || options.enginePreset || options.engineOverrides) {
+    const selectionContext: EngineSelectionContext = {
+      globalEngine: options.engineOverride,
+      preset: options.enginePreset,
+      agentOverrides: options.engineOverrides,
+    };
+    setEngineSelectionContext(selectionContext);
+    debug('[Workflow] Engine selection context set: engine=%s, preset=%s',
+      options.engineOverride ?? 'none',
+      options.enginePreset ?? 'none'
+    );
+  }
 
   // Sync agent configurations
   const workflowAgents = Array.from(
@@ -162,6 +186,10 @@ export async function runWorkflow(options: RunWorkflowOptions = {}): Promise<voi
       reason: (error as Error).message,
     });
     throw error;
+  } finally {
+    // Clean up engine selection context
+    clearEngineSelectionContext();
+    clearEngineConfigFile();
   }
 
   // Keep process alive for TUI

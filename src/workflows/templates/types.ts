@@ -82,6 +82,12 @@ export interface RunWorkflowOptions {
   cwd?: string;
   templatePath?: string;
   specificationPath?: string;
+  /** Engine preset name (e.g., 'all-claude', 'all-gemini') */
+  enginePreset?: string;
+  /** Global engine override for all agents */
+  engineOverride?: string;
+  /** Per-agent engine overrides (agentId -> engineId) */
+  engineOverrides?: Record<string, string>;
 }
 
 export interface TaskManagerOptions {

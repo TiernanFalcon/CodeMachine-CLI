@@ -1,6 +1,28 @@
 import { registry } from '../../infra/engines/index.js';
 import { debug } from '../../shared/logging/logger.js';
 import type { WorkflowEventEmitter } from '../events/index.js';
+import {
+  getEngineSelectionContext,
+  resolveEngineForAgent,
+  type EngineConfigFile,
+} from './engine-presets.js';
+
+// Module-level config file cache (loaded once per workflow)
+let cachedConfigFile: EngineConfigFile | null = null;
+
+/**
+ * Set the cached engine config file for the current workflow
+ */
+export function setEngineConfigFile(config: EngineConfigFile | null): void {
+  cachedConfigFile = config;
+}
+
+/**
+ * Clear the cached engine config file
+ */
+export function clearEngineConfigFile(): void {
+  cachedConfigFile = null;
+}
 
 /**
  * Cache for engine authentication status with TTL
@@ -60,13 +82,44 @@ interface StepWithEngine {
 
 /**
  * Select engine for step execution with fallback logic
+ *
+ * Priority order (highest to lowest):
+ * 1. CLI --engine flag (global override via preset context)
+ * 2. CLI --preset flag (via preset context)
+ * 3. Step-level engine override (from workflow template)
+ * 4. Config file preset
+ * 5. Config file per-agent override
+ * 6. First authenticated engine by registry order
+ * 7. Default engine
  */
 export async function selectEngine(
   step: StepWithEngine,
   emitter: WorkflowEventEmitter,
   uniqueAgentId: string
 ): Promise<string> {
-  debug(`[DEBUG workflow] step.engine=${step.engine}`);
+  debug(`[DEBUG workflow] step.engine=${step.engine}, agentId=${step.agentId}`);
+
+  // Check for preset/override context first
+  const selectionContext = getEngineSelectionContext();
+  const presetEngine = resolveEngineForAgent(step.agentId, selectionContext, cachedConfigFile);
+
+  if (presetEngine) {
+    debug(`[DEBUG workflow] Preset/override engine for ${step.agentId}: ${presetEngine}`);
+    const presetEngineModule = registry.get(presetEngine);
+    const isPresetAuthed = presetEngineModule
+      ? await authCache.isAuthenticated(presetEngineModule.metadata.id, () => presetEngineModule.auth.isAuthenticated())
+      : false;
+
+    if (isPresetAuthed) {
+      const presetName = selectionContext?.preset ?? selectionContext?.globalEngine ?? 'config';
+      emitter.logMessage(uniqueAgentId, `Using ${presetEngineModule?.metadata.name ?? presetEngine} (${presetName})`);
+      debug(`[DEBUG workflow] Engine determined from preset: ${presetEngine}`);
+      return presetEngine;
+    } else {
+      const pretty = presetEngineModule?.metadata.name ?? presetEngine;
+      emitter.logMessage(uniqueAgentId, `${pretty} from preset is not authenticated; falling back to step/default engine`);
+    }
+  }
 
   // Determine engine: step override > first authenticated engine
   let engineType: string;
