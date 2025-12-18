@@ -193,6 +193,42 @@ export class WorkflowEventEmitter {
     });
   }
 
+  /**
+   * Emit agent goal update
+   */
+  setAgentGoal(agentId: string, goal: string): void {
+    debug('[Emitter] agent:goal id=%s goal=%s', agentId, goal);
+    this.bus.emit({
+      type: 'agent:goal',
+      agentId,
+      goal,
+    });
+  }
+
+  /**
+   * Emit agent current file update
+   */
+  setCurrentFile(agentId: string, file: string): void {
+    debug('[Emitter] agent:current-file id=%s file=%s', agentId, file);
+    this.bus.emit({
+      type: 'agent:current-file',
+      agentId,
+      file,
+    });
+  }
+
+  /**
+   * Emit agent current action update
+   */
+  setCurrentAction(agentId: string, action: string): void {
+    debug('[Emitter] agent:current-action id=%s action=%s', agentId, action);
+    this.bus.emit({
+      type: 'agent:current-action',
+      agentId,
+      action,
+    });
+  }
+
   // ─────────────────────────────────────────────────────────────────
   // Sub-Agents
   // ─────────────────────────────────────────────────────────────────

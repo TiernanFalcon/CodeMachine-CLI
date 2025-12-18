@@ -88,6 +88,39 @@ export function createAgentActions(ctx: AgentActionsContext) {
     ctx.notify()
   }
 
+  function updateAgentGoal(agentId: string, goal: string): void {
+    const state = ctx.getState()
+    ctx.setState({
+      ...state,
+      agents: state.agents.map((agent) =>
+        agent.id === agentId ? { ...agent, goal } : agent,
+      ),
+    })
+    ctx.notify()
+  }
+
+  function updateAgentCurrentFile(agentId: string, currentFile: string): void {
+    const state = ctx.getState()
+    ctx.setState({
+      ...state,
+      agents: state.agents.map((agent) =>
+        agent.id === agentId ? { ...agent, currentFile } : agent,
+      ),
+    })
+    ctx.notify()
+  }
+
+  function updateAgentCurrentAction(agentId: string, currentAction: string): void {
+    const state = ctx.getState()
+    ctx.setState({
+      ...state,
+      agents: state.agents.map((agent) =>
+        agent.id === agentId ? { ...agent, currentAction } : agent,
+      ),
+    })
+    ctx.notify()
+  }
+
   return {
     addAgent,
     updateAgentStatus,
@@ -95,5 +128,8 @@ export function createAgentActions(ctx: AgentActionsContext) {
     updateAgentModel,
     updateAgentTelemetry,
     registerMonitoringId,
+    updateAgentGoal,
+    updateAgentCurrentFile,
+    updateAgentCurrentAction,
   }
 }

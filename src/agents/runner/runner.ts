@@ -12,6 +12,7 @@ export type { ChainedPrompt } from './chained.js';
 import type { ParsedTelemetry } from '../../infra/engines/core/types.js';
 import { formatForLogFile } from '../../shared/formatters/logFileFormatter.js';
 import { info, error, debug } from '../../shared/logging/logger.js';
+import { parseToolUse, extractContextFromTool, extractGoal } from './parser.js';
 
 /**
  * Cache for engine authentication status with TTL (shared across all subagents)
@@ -52,6 +53,9 @@ const authCache = new EngineAuthCache();
  */
 export interface AgentExecutionUI {
   registerMonitoringId(uiAgentId: string, monitoringAgentId: number): void;
+  setAgentGoal?(agentId: string, goal: string): void;
+  setCurrentFile?(agentId: string, file: string): void;
+  setCurrentAction?(agentId: string, action: string): void;
 }
 
 export interface ExecuteAgentOptions {
@@ -341,6 +345,8 @@ export async function executeAgent(
     engineType, model, resumeSessionId ?? '(new session)');
 
   let totalStdout = '';
+  let lastParsedLength = 0; // Track what we've already parsed to avoid duplicates
+  let goalExtracted = false; // Track if we've extracted the goal yet
 
   try {
     const result = await engine.run({
@@ -359,6 +365,41 @@ export async function executeAgent(
       },
       onData: (chunk) => {
         totalStdout += chunk;
+
+        // Extract context from agent output (goal, file, action)
+        if (ui && uniqueAgentId) {
+          // Extract goal from initial output (only once)
+          if (!goalExtracted && totalStdout.length > 50) {
+            const goal = extractGoal(totalStdout);
+            if (goal) {
+              debug(`[AgentRunner] Extracted goal: %s`, goal);
+              ui.setAgentGoal?.(uniqueAgentId, goal);
+              goalExtracted = true;
+            }
+          }
+
+          // Parse tool use from new content (avoid re-parsing)
+          const newContent = totalStdout.slice(lastParsedLength);
+          if (newContent.length > 0) {
+            const toolUse = parseToolUse(newContent);
+            if (toolUse.tool && toolUse.parameters) {
+              const context = extractContextFromTool(toolUse.tool, toolUse.parameters);
+
+              if (context.currentFile) {
+                debug(`[AgentRunner] Detected file: %s`, context.currentFile);
+                ui.setCurrentFile?.(uniqueAgentId, context.currentFile);
+              }
+
+              if (context.currentAction) {
+                debug(`[AgentRunner] Detected action: %s`, context.currentAction);
+                ui.setCurrentAction?.(uniqueAgentId, context.currentAction);
+              }
+
+              // Update parsed position to end of this tool call
+              lastParsedLength = totalStdout.length;
+            }
+          }
+        }
 
         // Dual-stream: write to log file (with status text) AND original logger (with colors)
         if (loggerService && monitoringAgentId !== undefined) {

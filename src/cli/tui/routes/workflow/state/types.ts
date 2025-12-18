@@ -35,6 +35,9 @@ export interface AgentState {
   stepIndex?: number
   totalSteps?: number
   monitoringId?: number // Maps to AgentMonitorService registry ID for log file access
+  goal?: string // Agent's current goal/task
+  currentFile?: string // File being processed
+  currentAction?: string // Current action description
 }
 
 export interface SubAgentState extends AgentState {
