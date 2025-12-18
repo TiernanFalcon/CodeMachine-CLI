@@ -7,7 +7,7 @@ export const metadata: EngineMetadata = {
   cliCommand: 'gemini',
   cliBinary: '', // No external binary - uses direct API
   installCommand: '', // No install needed - uses @google/generative-ai
-  defaultModel: 'gemini-2.0-flash-thinking-exp-01-21',
+  defaultModel: 'gemini-3-pro',
   order: 1, // High priority - excellent for code generation
   experimental: false,
 };
