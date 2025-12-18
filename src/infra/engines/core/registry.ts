@@ -13,6 +13,7 @@ import cursorEngine from '../providers/cursor/index.js';
 import ccrEngine from '../providers/ccr/index.js';
 import opencodeEngine from '../providers/opencode/index.js';
 import auggieEngine from '../providers/auggie/index.js';
+import mockEngine from '../providers/mock/index.js';
 
 /**
  * Engine Registry - Singleton that manages all available engines
@@ -40,7 +41,8 @@ class EngineRegistry {
       ccrEngine,
       opencodeEngine,
       auggieEngine,
-      // Add new engines here
+      // Mock engine is only registered in test mode
+      ...(process.env.CODEMACHINE_ENABLE_MOCK_ENGINE === '1' ? [mockEngine] : []),
     ];
 
     for (const engineModule of engineModules) {
