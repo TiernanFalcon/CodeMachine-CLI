@@ -77,9 +77,9 @@ function extractAccomplishments(output: string): string[] {
 
   // Look for common patterns indicating accomplishments
   const patterns = [
-    /(?:Successfully|Completed?|Finished|Done|Implemented?|Added|Created?|Fixed|Updated?|Refactored?)\s+(.+?)[\.\n]/gi,
-    /✅\s*(.+?)[\.\n]/g,
-    /✓\s*(.+?)[\.\n]/g
+    /(?:Successfully|Completed?|Finished|Done|Implemented?|Added|Created?|Fixed|Updated?|Refactored?)\s+(.+?)[.\n]/gi,
+    /✅\s*(.+?)[.\n]/g,
+    /✓\s*(.+?)[.\n]/g
   ];
 
   for (const pattern of patterns) {
@@ -240,7 +240,7 @@ async function loadStepSummaries(cmRoot: string): Promise<string[]> {
       const content = await fs.readFile(path.join(summariesDir, file), 'utf-8');
       summaries.push(content);
     }
-  } catch (error) {
+  } catch (_error) {
     // Directory might not exist yet
   }
 
@@ -253,8 +253,8 @@ async function loadStepSummaries(cmRoot: string): Promise<string[]> {
 export async function generateWorkflowSummary(options: GenerateWorkflowSummaryOptions): Promise<void> {
   const { steps, savePath, cmRoot } = options;
 
-  // Load all step summaries
-  const stepSummaries = await loadStepSummaries(cmRoot);
+  // Load all step summaries (reserved for future metrics aggregation)
+  const _stepSummaries = await loadStepSummaries(cmRoot);
 
   // Build markdown content
   const lines: string[] = [];

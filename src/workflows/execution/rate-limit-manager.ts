@@ -87,7 +87,7 @@ export class RateLimitManager {
 
       this.initialized = true;
       debug('[RateLimitManager] Initialized with %d active rate limits', this.entries.size);
-    } catch (error) {
+    } catch (_error) {
       // File doesn't exist or is invalid - start fresh
       this.initialized = true;
       debug('[RateLimitManager] Initialized fresh (no persisted state)');

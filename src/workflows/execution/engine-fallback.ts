@@ -223,7 +223,7 @@ function findSoonestReset(
 /**
  * Find next available engine (authenticated and not rate-limited)
  */
-async function findNextAvailableEngine(
+async function _findNextAvailableEngine(
   excludeEngine: string,
   rateLimitManager: RateLimitManager
 ): Promise<string | null> {
