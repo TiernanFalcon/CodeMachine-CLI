@@ -7,7 +7,7 @@
 
 import type { WorkflowEvent } from "../../../../../workflows/events/index.js"
 import { debug } from "../../../../../shared/logging/logger.js"
-import type { AgentStatus, SubAgentState, LoopState, ChainedState, InputState, TriggeredAgentState } from "../state/types.js"
+import type { AgentStatus, SubAgentState, LoopState, ChainedState, InputState, RateLimitState, TriggeredAgentState } from "../state/types.js"
 import { BaseUIAdapter } from "./base.js"
 import type { UIAdapterOptions } from "./types.js"
 
@@ -45,9 +45,10 @@ export interface UIActions {
   batchAddSubAgents(parentId: string, subAgents: SubAgentState[]): void
   updateSubAgentStatus(subAgentId: string, status: AgentStatus): void
   clearSubAgents(parentId: string): void
-  setWorkflowStatus(status: "running" | "stopping" | "completed" | "stopped" | "checkpoint" | "paused" | "error"): void
+  setWorkflowStatus(status: "running" | "stopping" | "completed" | "stopped" | "checkpoint" | "paused" | "error" | "rate_limit_waiting"): void
   setCheckpointState(checkpoint: { active: boolean; reason?: string } | null): void
   setInputState(inputState: InputState | null): void
+  setRateLimitState(rateLimitState: RateLimitState | null): void
   /** @deprecated Use setInputState instead */
   setChainedState(chainedState: ChainedState | null): void
   registerMonitoringId(uiAgentId: string, monitoringId: number): void
@@ -224,6 +225,30 @@ export class OpenTUIAdapter extends BaseUIAdapter {
       // Monitoring registration
       case "monitoring:register":
         this.actions.registerMonitoringId(event.uiAgentId, event.monitoringId)
+        break
+
+      // Engine rate limit events
+      case "engine:rate-limited":
+        // Update rate limit state when an engine is rate limited
+        this.actions.setRateLimitState({
+          active: true,
+          resetsAt: event.resetsAt,
+          engineId: event.engineId,
+          rateLimitedEngines: [event.engineId],
+        })
+        break
+
+      case "engine:available":
+        // Clear rate limit state when engine becomes available
+        this.actions.setRateLimitState(null)
+        break
+
+      case "engine:fallback":
+        // Log the fallback event
+        this.actions.logMessage(
+          event.toEngine,
+          `Falling back from ${event.fromEngine} to ${event.toEngine}: ${event.reason}`
+        )
         break
     }
   }

@@ -22,6 +22,7 @@ export function createInitialState(workflowName: string, totalSteps = 0): Workfl
     loopState: null,
     checkpointState: null,
     inputState: null,
+    rateLimitState: null,
     chainedState: null,
     expandedNodes: new Set(),
     showTelemetryView: false,

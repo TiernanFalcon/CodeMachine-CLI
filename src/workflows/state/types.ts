@@ -11,12 +11,13 @@ import type { ModuleStep } from '../templates/types.js';
  * Workflow states - mutually exclusive
  */
 export type WorkflowState =
-  | 'idle'              // Not started
-  | 'running'           // Agent executing (input disabled)
-  | 'waiting'           // Waiting for input (input enabled)
-  | 'completed'         // All steps done
-  | 'stopped'           // User stopped
-  | 'error';            // Fatal error
+  | 'idle'                    // Not started
+  | 'running'                 // Agent executing (input disabled)
+  | 'waiting'                 // Waiting for input (input enabled)
+  | 'waiting_for_rate_limit'  // All engines rate-limited, waiting for reset
+  | 'completed'               // All steps done
+  | 'stopped'                 // User stopped
+  | 'error';                  // Fatal error
 
 /**
  * Events that trigger state transitions
@@ -28,7 +29,9 @@ export type WorkflowEvent =
   | { type: 'INPUT_RECEIVED'; input: string }
   | { type: 'SKIP' }
   | { type: 'PAUSE' }
-  | { type: 'STOP' };
+  | { type: 'STOP' }
+  | { type: 'RATE_LIMIT_WAIT'; resetsAt: Date; engineId: string }
+  | { type: 'RATE_LIMIT_CLEAR' };
 
 /**
  * Output from a completed step
@@ -63,6 +66,10 @@ export interface WorkflowContext {
 
   // Error tracking
   lastError?: Error;
+
+  // Rate limit tracking
+  rateLimitResetsAt?: Date;
+  rateLimitEngineId?: string;
 }
 
 /**

@@ -167,6 +167,16 @@ export function createWorkflowMachine(initialContext: Partial<WorkflowContext> =
               }
             },
           },
+          RATE_LIMIT_WAIT: {
+            target: 'waiting_for_rate_limit',
+            action: (ctx, event) => {
+              if (event.type === 'RATE_LIMIT_WAIT') {
+                ctx.rateLimitResetsAt = event.resetsAt;
+                ctx.rateLimitEngineId = event.engineId;
+                debug('[FSM] Rate limit wait - engine %s resets at %s', event.engineId, event.resetsAt.toISOString());
+              }
+            },
+          },
           SKIP: [
             // Skip while running - advance to next step
             {
@@ -191,6 +201,28 @@ export function createWorkflowMachine(initialContext: Partial<WorkflowContext> =
               // Pause forces manual mode
               ctx.autoMode = false;
               debug('[FSM] Paused - auto mode disabled');
+            },
+          },
+          STOP: {
+            target: 'stopped',
+          },
+        },
+      },
+
+      waiting_for_rate_limit: {
+        onEnter: (ctx) => {
+          debug('[FSM] Entering rate limit wait state, resets at %s', ctx.rateLimitResetsAt?.toISOString());
+        },
+        onExit: (ctx) => {
+          // Clear rate limit info when exiting
+          ctx.rateLimitResetsAt = undefined;
+          ctx.rateLimitEngineId = undefined;
+        },
+        on: {
+          RATE_LIMIT_CLEAR: {
+            target: 'running',
+            action: () => {
+              debug('[FSM] Rate limit cleared, resuming execution');
             },
           },
           STOP: {

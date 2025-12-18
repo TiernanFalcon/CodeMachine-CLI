@@ -6,11 +6,11 @@
  * Show workflow info, status, and total telemetry in footer
  */
 
-import { Show } from "solid-js"
+import { Show, createSignal, createEffect, onCleanup } from "solid-js"
 import { useTerminalDimensions } from "@opentui/solid"
 import { useTheme } from "@tui/shared/context/theme"
 import { formatTokens, formatNumber } from "../../state/formatters"
-import type { WorkflowStatus } from "../../state/types"
+import type { WorkflowStatus, RateLimitState } from "../../state/types"
 
 export interface TelemetryBarProps {
   workflowName: string
@@ -22,6 +22,7 @@ export interface TelemetryBarProps {
     cached?: number
   }
   autonomousMode?: boolean
+  rateLimitState?: RateLimitState | null
 }
 
 /**
@@ -50,11 +51,51 @@ export function TelemetryBar(props: TelemetryBarProps) {
     return formatTokens(newTokensIn, props.total.tokensOut)
   }
 
-  const showStatus = () => props.status === "checkpoint" || props.status === "paused" || props.status === "stopped"
+  // Rate limit countdown timer
+  const [countdown, setCountdown] = createSignal<string>("")
+
+  createEffect(() => {
+    const rateLimitState = props.rateLimitState
+    if (!rateLimitState?.active || !rateLimitState.resetsAt) {
+      setCountdown("")
+      return
+    }
+
+    // Update countdown every second
+    const updateCountdown = () => {
+      const now = Date.now()
+      const resetTime = rateLimitState.resetsAt!.getTime()
+      const remaining = Math.max(0, Math.ceil((resetTime - now) / 1000))
+
+      if (remaining <= 0) {
+        setCountdown("resuming...")
+        return
+      }
+
+      const minutes = Math.floor(remaining / 60)
+      const seconds = remaining % 60
+      if (minutes > 0) {
+        setCountdown(`${minutes}m ${seconds}s`)
+      } else {
+        setCountdown(`${seconds}s`)
+      }
+    }
+
+    updateCountdown()
+    const interval = setInterval(updateCountdown, 1000)
+    onCleanup(() => clearInterval(interval))
+  })
+
+  const showStatus = () =>
+    props.status === "checkpoint" ||
+    props.status === "paused" ||
+    props.status === "stopped" ||
+    props.status === "rate_limit_waiting"
 
   const statusColor = () => {
     switch (props.status) {
       case "stopped": return themeCtx.theme.error
+      case "rate_limit_waiting": return themeCtx.theme.warning
       default: return themeCtx.theme.warning
     }
   }
@@ -64,6 +105,17 @@ export function TelemetryBar(props: TelemetryBarProps) {
       case "checkpoint": return "Checkpoint"
       case "paused": return "Paused"
       case "stopped": return "Stopped"
+      case "rate_limit_waiting": {
+        const engine = props.rateLimitState?.engineId
+        const cd = countdown()
+        if (engine && cd) {
+          return `Rate Limited (${engine}) - ${cd}`
+        }
+        if (cd) {
+          return `Rate Limited - ${cd}`
+        }
+        return "Rate Limited"
+      }
       default: return ""
     }
   }

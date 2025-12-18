@@ -64,6 +64,9 @@ export function WorkflowShell(props: WorkflowShellProps) {
         case "checkpoint":
           toast.show({ variant: "warning", message: "Checkpoint - Review Required", duration: 5000 })
           break
+        case "rate_limit_waiting":
+          toast.show({ variant: "warning", message: "All engines rate-limited, waiting for reset...", duration: 5000 })
+          break
       }
     }
     return status
@@ -412,7 +415,7 @@ export function WorkflowShell(props: WorkflowShellProps) {
       </box>
 
       <box flexShrink={0} flexDirection="column">
-        <TelemetryBar workflowName={state().workflowName} runtime={runtime()} status={state().workflowStatus} total={totalTelemetry()} autonomousMode={state().autonomousMode} />
+        <TelemetryBar workflowName={state().workflowName} runtime={runtime()} status={state().workflowStatus} total={totalTelemetry()} autonomousMode={state().autonomousMode} rateLimitState={state().rateLimitState} />
         <StatusFooter autonomousMode={state().autonomousMode} />
       </box>
 
