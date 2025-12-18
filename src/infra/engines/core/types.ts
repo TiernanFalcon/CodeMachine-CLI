@@ -37,6 +37,12 @@ export interface EngineRunOptions {
 export interface EngineRunResult {
   stdout: string;
   stderr: string;
+  /** True if the engine hit a rate limit */
+  isRateLimitError?: boolean;
+  /** When the rate limit resets (if known) */
+  rateLimitResetsAt?: Date;
+  /** Retry-after duration in seconds (if provided by API) */
+  retryAfterSeconds?: number;
 }
 
 export interface Engine {

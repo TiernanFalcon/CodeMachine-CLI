@@ -396,6 +396,48 @@ export class WorkflowEventEmitter {
       monitoringId,
     });
   }
+
+  // ─────────────────────────────────────────────────────────────────
+  // Engine Rate Limit Events
+  // ─────────────────────────────────────────────────────────────────
+
+  /**
+   * Emit engine rate limited event
+   */
+  engineRateLimited(engineId: string, resetsAt?: Date, retryAfterSeconds?: number): void {
+    debug('[Emitter] engine:rate-limited engineId=%s resetsAt=%s retryAfter=%d',
+      engineId, resetsAt?.toISOString() ?? '(unknown)', retryAfterSeconds ?? 0);
+    this.bus.emit({
+      type: 'engine:rate-limited',
+      engineId,
+      resetsAt,
+      retryAfterSeconds,
+    });
+  }
+
+  /**
+   * Emit engine available event (rate limit expired)
+   */
+  engineAvailable(engineId: string): void {
+    debug('[Emitter] engine:available engineId=%s', engineId);
+    this.bus.emit({
+      type: 'engine:available',
+      engineId,
+    });
+  }
+
+  /**
+   * Emit engine fallback event
+   */
+  engineFallback(fromEngine: string, toEngine: string, reason: string): void {
+    debug('[Emitter] engine:fallback from=%s to=%s reason=%s', fromEngine, toEngine, reason);
+    this.bus.emit({
+      type: 'engine:fallback',
+      fromEngine,
+      toEngine,
+      reason,
+    });
+  }
 }
 
 /**
