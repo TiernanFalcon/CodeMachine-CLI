@@ -41,6 +41,7 @@ import {
   getStepData,
   getChainResumeInfo,
 } from '../../shared/workflows/steps.js';
+import { generateStepSummary, generateWorkflowSummary } from './summary-generator.js';
 
 /**
  * Runner options
@@ -208,6 +209,20 @@ export class WorkflowRunner {
 
     if (finalState === 'completed') {
       this.emitter.setWorkflowStatus('completed');
+
+      // Generate workflow summary (non-blocking)
+      try {
+        const summaryPath = path.join(this.cmRoot, 'summaries', 'workflow-summary.md');
+        await generateWorkflowSummary({
+          steps: this.template.steps,
+          savePath: summaryPath,
+          cmRoot: this.cmRoot
+        });
+        debug('[Runner] Workflow summary generated: %s', summaryPath);
+      } catch (summaryError) {
+        // Don't fail workflow if summary generation fails
+        debug('[Runner] Failed to generate workflow summary: %o', summaryError);
+      }
     } else if (finalState === 'stopped') {
       this.emitter.setWorkflowStatus('stopped');
     } else if (finalState === 'error') {
@@ -352,6 +367,23 @@ export class WorkflowRunner {
       }
 
       this.machine.send({ type: 'STEP_COMPLETE', output: stepOutput });
+
+      // Generate step summary (non-blocking)
+      try {
+        const summaryPath = path.join(this.cmRoot, 'summaries', `step-${ctx.currentStepIndex}.md`);
+        await generateStepSummary({
+          step,
+          output: stepOutput,
+          uniqueAgentId,
+          stepIndex: ctx.currentStepIndex,
+          savePath: summaryPath,
+          cwd: this.cwd
+        });
+        debug('[Runner] Step summary generated: %s', summaryPath);
+      } catch (summaryError) {
+        // Don't fail workflow if summary generation fails
+        debug('[Runner] Failed to generate step summary: %o', summaryError);
+      }
     } catch (error) {
       // Handle abort
       if (error instanceof Error && error.name === 'AbortError') {

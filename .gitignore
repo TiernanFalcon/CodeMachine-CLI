@@ -24,6 +24,7 @@ src/shared/runtime/resource-manifest.ts
 .codemachine/logs
 .codemachine/prompts
 .codemachine/agents
+.codemachine/summaries
 .codemachine/template.json
 
 # MkDocs build output
