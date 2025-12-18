@@ -21,15 +21,16 @@ export interface ToolContext {
  * Handles both XML-style and JSON-style tool calls
  */
 export function parseToolUse(output: string): ToolUse {
-  // Try to parse XML-style tool use (Anthropic format)
-  const xmlMatch = output.match(/<invoke name="([^"]+)">([\s\S]*?)<\/antml:invoke>/);
+  // Try to parse XML-style tool use (Anthropic/Claude format)
+  // Matches both <invoke> and <invoke> formats
+  const xmlMatch = output.match(/<(?:antml:)?invoke name="([^"]+)">([\s\S]*?)<\/(?:antml:)?invoke>/);
   if (xmlMatch) {
     const toolName = xmlMatch[1];
     const paramsContent = xmlMatch[2];
 
-    // Extract parameters
+    // Extract parameters - matches both <parameter> and <parameter> formats
     const params: Record<string, any> = {};
-    const paramMatches = paramsContent.matchAll(/<parameter name="([^"]+)">([^<]*)<\/antml:parameter>/g);
+    const paramMatches = paramsContent.matchAll(/<(?:antml:)?parameter name="([^"]+)">([^<]*)<\/(?:antml:)?parameter>/g);
 
     for (const match of paramMatches) {
       params[match[1]] = match[2];
