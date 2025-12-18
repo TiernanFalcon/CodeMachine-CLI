@@ -22,6 +22,9 @@ if (!process.env.CODEMACHINE_SKIP_AUTH) {
   process.env.CODEMACHINE_SKIP_AUTH = '1';
 }
 
+// Enable mock engine for testing
+process.env.CODEMACHINE_ENABLE_MOCK_ENGINE = '1';
+
 afterEach(() => {
   // Bun automatically restores mocks after each test
   // But we can explicitly restore if needed
