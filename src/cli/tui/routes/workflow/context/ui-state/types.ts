@@ -52,6 +52,7 @@ export type UIActions = {
   addUIElement(element: { id: string; text: string; stepIndex: number }): void
   logMessage(agentId: string, message: string): void
   setAutonomousMode(enabled: boolean): void
+  setEnginePreset(preset: string | null): void
 }
 
 export type { WorkflowState, AgentStatus, LoopState, ChainedState, InputState, RateLimitState, SubAgentState, TriggeredAgentState, WorkflowStatus }

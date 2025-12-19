@@ -30,7 +30,7 @@ import {
   type InputContext,
 } from '../input/index.js';
 import { executeStep } from './step.js';
-import { selectEngine } from './engine.js';
+import { selectEngine, getPresetModel } from './engine.js';
 import { loadControllerConfig } from '../../shared/workflows/controller.js';
 import { registry } from '../../infra/engines/index.js';
 import {
@@ -305,11 +305,14 @@ export class WorkflowRunner {
     step.engine = engineType;
     this.emitter.updateAgentEngine(uniqueAgentId, engineType);
 
-    // Resolve model
+    // Resolve model: preset > step.model > engine default
     const engineModule = registry.get(engineType);
-    const resolvedModel = step.model ?? engineModule?.metadata.defaultModel;
+    const presetModel = getPresetModel(step.agentId);
+    const resolvedModel = presetModel ?? step.model ?? engineModule?.metadata.defaultModel;
     if (resolvedModel) {
       this.emitter.updateAgentModel(uniqueAgentId, resolvedModel);
+      // Update step.model so it's passed to execution
+      step.model = resolvedModel;
     }
 
     try {

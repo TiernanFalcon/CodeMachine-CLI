@@ -2,7 +2,22 @@
   "permissions": {
     "allow": [
       "Bash(bun run typecheck:*)",
-      "Bash(npm run typecheck:*)"
+      "Bash(npm run typecheck:*)",
+      "Bash(git checkout:*)",
+      "Bash(git stash:*)",
+      "Bash(npx bun run:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git merge:*)",
+      "Bash(dir /s /b *.workflow.*)",
+      "Bash(git rm:*)",
+      "Bash(bun test:*)",
+      "Bash(cat:*)",
+      "Bash(where:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npx eslint:*)",
+      "Bash(git pull:*)"
     ]
   }
 }

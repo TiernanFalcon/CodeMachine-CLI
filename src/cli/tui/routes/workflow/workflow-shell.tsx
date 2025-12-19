@@ -14,7 +14,7 @@ import { useUIState } from "./context/ui-state"
 import { AgentTimeline } from "./components/timeline"
 import { OutputWindow, TelemetryBar, StatusFooter } from "./components/output"
 import { formatRuntime } from "./state/formatters"
-import { CheckpointModal, LogViewer, HistoryView, StopModal, ErrorModal } from "./components/modals"
+import { CheckpointModal, LogViewer, HistoryView, StopModal, ErrorModal, SettingsModal } from "./components/modals"
 import { OpenTUIAdapter } from "./adapters/opentui"
 import { useLogStream } from "./hooks/useLogStream"
 import { useSubAgentSync } from "./hooks/useSubAgentSync"
@@ -23,6 +23,7 @@ import { useWorkflowKeyboard } from "./hooks/use-workflow-keyboard"
 import { calculateVisibleItems } from "./constants"
 import type { WorkflowEventBus } from "../../../../workflows/events/index.js"
 import { setAutonomousMode as persistAutonomousMode, loadControllerConfig } from "../../../../shared/workflows/index.js"
+import { setEngineSelectionContext, loadEngineConfig, saveEngineConfig } from "../../../../workflows/execution/engine-presets.js"
 import { debug } from "../../../../shared/logging/logger.js"
 import path from "path"
 
@@ -344,6 +345,34 @@ export function WorkflowShell(props: WorkflowShellProps) {
     }
   }
 
+  // Handle engine preset selection
+  const handlePresetSelect = async (preset: string | null) => {
+    const cmRoot = path.join(resolvePath(props.currentDir), '.codemachine')
+
+    // Update UI state
+    ui.actions.setEnginePreset(preset)
+
+    // Update runtime context for immediate effect
+    setEngineSelectionContext({ preset: preset ?? undefined })
+
+    // Persist to config file
+    try {
+      const existingConfig = await loadEngineConfig(cmRoot)
+      await saveEngineConfig(cmRoot, { ...existingConfig, preset: preset ?? undefined })
+      debug('[SETTINGS] Persisted engine preset: %s', preset ?? 'default')
+      toast.show({
+        variant: "success",
+        message: preset ? `Engine preset: ${preset}` : "Using default engines",
+        duration: 3000
+      })
+    } catch (err) {
+      debug('[SETTINGS] Failed to persist preset: %s', err)
+      toast.show({ variant: "error", message: "Failed to save preset", duration: 3000 })
+    }
+
+    modals.setShowSettings(false)
+  }
+
   const getMonitoringId = (uiAgentId: string): number | undefined => {
     const s = state()
     const mainAgent = s.agents.find((a) => a.id === uiAgentId)
@@ -360,7 +389,7 @@ export function WorkflowShell(props: WorkflowShellProps) {
     getState: state,
     actions: ui.actions,
     calculateVisibleItems: getVisibleItems,
-    isModalBlocking: () => isCheckpointActive() || modals.isLogViewerActive() || modals.isHistoryActive() || modals.isHistoryLogViewerActive() || showStopModal() || isErrorModalActive(),
+    isModalBlocking: () => isCheckpointActive() || modals.isLogViewerActive() || modals.isHistoryActive() || modals.isHistoryLogViewerActive() || showStopModal() || isErrorModalActive() || modals.isSettingsActive(),
     isPromptBoxFocused: () => isPromptBoxFocused(),
     isWaitingForInput,
     hasQueuedPrompts,
@@ -379,6 +408,7 @@ export function WorkflowShell(props: WorkflowShellProps) {
     exitPromptBoxFocus: () => setIsPromptBoxFocused(false),
     isAutonomousMode: () => state().autonomousMode,
     toggleAutonomousMode,
+    openSettings: () => modals.setShowSettings(true),
   })
 
   return (
@@ -452,6 +482,16 @@ export function WorkflowShell(props: WorkflowShellProps) {
       <Show when={isErrorModalActive()}>
         <box position="absolute" left={0} top={0} width="100%" height="100%" zIndex={2000}>
           <ErrorModal message={errorMessage()!} onClose={handleErrorModalClose} />
+        </box>
+      </Show>
+
+      <Show when={modals.isSettingsActive()}>
+        <box position="absolute" left={0} top={0} width="100%" height="100%" zIndex={1000}>
+          <SettingsModal
+            currentPreset={state().selectedEnginePreset}
+            onSelect={handlePresetSelect}
+            onClose={() => modals.setShowSettings(false)}
+          />
         </box>
       </Show>
     </box>

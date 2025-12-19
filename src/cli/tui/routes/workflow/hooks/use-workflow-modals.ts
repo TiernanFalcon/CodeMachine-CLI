@@ -15,9 +15,12 @@ export interface WorkflowModalsState {
   setHistorySelectedIndex: (index: number) => void
   historyLogViewerMonitoringId: () => number | null
   setHistoryLogViewerMonitoringId: (id: number | null) => void
+  showSettings: () => boolean
+  setShowSettings: (show: boolean) => void
   isLogViewerActive: () => boolean
   isHistoryActive: () => boolean
   isHistoryLogViewerActive: () => boolean
+  isSettingsActive: () => boolean
 }
 
 /**
@@ -28,6 +31,7 @@ export function useWorkflowModals(): WorkflowModalsState {
   const [showHistory, setShowHistory] = createSignal(false)
   const [historySelectedIndex, setHistorySelectedIndex] = createSignal(0)
   const [historyLogViewerMonitoringId, setHistoryLogViewerMonitoringId] = createSignal<number | null>(null)
+  const [showSettings, setShowSettings] = createSignal(false)
 
   return {
     logViewerAgentId,
@@ -38,8 +42,11 @@ export function useWorkflowModals(): WorkflowModalsState {
     setHistorySelectedIndex,
     historyLogViewerMonitoringId,
     setHistoryLogViewerMonitoringId,
+    showSettings,
+    setShowSettings,
     isLogViewerActive: () => logViewerAgentId() !== null,
     isHistoryActive: () => showHistory(),
     isHistoryLogViewerActive: () => historyLogViewerMonitoringId() !== null,
+    isSettingsActive: () => showSettings(),
   }
 }

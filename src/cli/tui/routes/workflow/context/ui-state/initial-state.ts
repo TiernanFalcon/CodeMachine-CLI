@@ -37,5 +37,6 @@ export function createInitialState(workflowName: string, totalSteps = 0): Workfl
     agentIdMapVersion: 0,
     agentLogs: new Map(),
     autonomousMode: false,
+    selectedEnginePreset: null,
   }
 }

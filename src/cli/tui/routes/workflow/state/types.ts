@@ -165,6 +165,8 @@ export interface WorkflowState {
   agentIdMapVersion: number
   agentLogs: Map<string, string[]>
   autonomousMode: boolean
+  /** Currently selected engine preset (null = use step defaults) */
+  selectedEnginePreset: string | null
 }
 
 export type ThemeLike = {

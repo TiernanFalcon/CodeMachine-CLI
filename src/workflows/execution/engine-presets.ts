@@ -16,11 +16,53 @@ import { registry } from '../../infra/engines/index.js';
 export type BuiltInPreset = 'all-claude' | 'all-gemini' | 'all-codex' | 'all-cursor';
 
 /**
+ * Agent complexity tier (1=complex, 2=standard, 3=simple)
+ */
+export type AgentTier = 1 | 2 | 3;
+
+/**
+ * Agent tier assignments based on complexity
+ */
+const AGENT_TIERS: Record<string, AgentTier> = {
+  // Tier 1: Complex reasoning - strategic planning, architecture
+  'principal-analyst': 1,
+  'blueprint-orchestrator': 1,
+  'plan-agent': 1,
+  'founder-architect': 1,
+  'structural-data-architect': 1,
+  'behavior-architect': 1,
+  'ui-ux-architect': 1,
+  'operational-architect': 1,
+  // Tier 2: Standard tasks - development work
+  'context-manager': 2,
+  'code-generation': 2,
+  'runtime-prep': 2,
+  'task-breakdown': 2,
+  // Tier 3: Simple tasks - quick checks, commits
+  'git-commit': 3,
+  'task-sanity-check': 3,
+  'check-task': 3,
+  'file-assembler': 3,
+};
+
+/** Default tier for unknown agents */
+const DEFAULT_TIER: AgentTier = 2;
+
+/**
+ * Get the tier for an agent
+ */
+export function getAgentTier(agentId: string): AgentTier {
+  return AGENT_TIERS[agentId] ?? DEFAULT_TIER;
+}
+
+/**
  * Engine preset configuration
  */
 export interface EnginePresetConfig {
   /** Default engine for all agents */
   defaultEngine?: string;
+  /** Model to use per agent tier (1=complex, 2=standard, 3=simple) */
+  modelByTier?: Record<AgentTier, string>;
   /** Per-agent engine overrides (agentId -> engineId) */
   agentOverrides?: Record<string, string>;
 }
@@ -38,20 +80,40 @@ export interface EngineConfigFile {
 }
 
 /**
- * Built-in preset definitions
+ * Built-in preset definitions with tiered model assignments
  */
 const BUILT_IN_PRESETS: Record<BuiltInPreset, EnginePresetConfig> = {
   'all-claude': {
     defaultEngine: 'claude',
+    modelByTier: {
+      1: 'opus',     // Complex: strategic planning, architecture
+      2: 'sonnet',   // Standard: development tasks
+      3: 'haiku',    // Simple: quick checks, commits
+    },
   },
   'all-gemini': {
     defaultEngine: 'gemini',
+    modelByTier: {
+      1: 'gemini-1.5-pro',
+      2: 'gemini-1.5-pro',
+      3: 'gemini-1.5-flash',
+    },
   },
   'all-codex': {
     defaultEngine: 'codex',
+    modelByTier: {
+      1: 'gpt-4o',
+      2: 'gpt-4o',
+      3: 'gpt-4o-mini',
+    },
   },
   'all-cursor': {
     defaultEngine: 'cursor',
+    modelByTier: {
+      1: 'claude-3.5-sonnet',
+      2: 'claude-3.5-sonnet',
+      3: 'claude-3.5-sonnet',
+    },
   },
 };
 
@@ -230,6 +292,78 @@ export function resolveEngineForAgent(
   // No override found - let the caller handle default selection
   debug('[EnginePresets] Agent %s: no override found', agentId);
   return undefined;
+}
+
+/**
+ * Result of resolving engine and model for an agent
+ */
+export interface EngineModelResolution {
+  engine: string;
+  model: string;
+}
+
+/**
+ * Resolve engine AND model for a specific agent based on preset and tier
+ *
+ * This function considers the agent's complexity tier when selecting the model,
+ * using more capable models for complex agents and lighter models for simple tasks.
+ */
+export function resolveEngineAndModelForAgent(
+  agentId: string,
+  context: EngineSelectionContext | null,
+  configFile: EngineConfigFile | null
+): EngineModelResolution | undefined {
+  // Get the preset name from context or config
+  const presetName = context?.preset ?? configFile?.preset;
+  if (!presetName && !context?.globalEngine) {
+    return undefined;
+  }
+
+  // If global engine override, use it with tier-based model
+  if (context?.globalEngine) {
+    const tier = getAgentTier(agentId);
+    // For global engine override without preset, we need to find a matching preset
+    // to get model mappings, or return just the engine
+    const matchingPreset = Object.entries(BUILT_IN_PRESETS).find(
+      ([, config]) => config.defaultEngine === context.globalEngine
+    );
+    if (matchingPreset) {
+      const [, presetConfig] = matchingPreset;
+      const model = presetConfig.modelByTier?.[tier];
+      if (model) {
+        debug('[EnginePresets] Agent %s (tier %d): engine=%s, model=%s (global override)',
+          agentId, tier, context.globalEngine, model);
+        return { engine: context.globalEngine, model };
+      }
+    }
+    debug('[EnginePresets] Agent %s: engine=%s, no model mapping (global override)',
+      agentId, context.globalEngine);
+    return undefined;
+  }
+
+  // Resolve preset config
+  const presetConfig = resolvePresetConfig(presetName!, configFile);
+  if (!presetConfig?.defaultEngine) {
+    return undefined;
+  }
+
+  // Get agent tier and resolve model
+  const tier = getAgentTier(agentId);
+  const model = presetConfig.modelByTier?.[tier];
+
+  if (!model) {
+    debug('[EnginePresets] Agent %s (tier %d): engine=%s, no model mapping',
+      agentId, tier, presetConfig.defaultEngine);
+    return undefined;
+  }
+
+  debug('[EnginePresets] Agent %s (tier %d): engine=%s, model=%s',
+    agentId, tier, presetConfig.defaultEngine, model);
+
+  return {
+    engine: presetConfig.defaultEngine,
+    model,
+  };
 }
 
 /**

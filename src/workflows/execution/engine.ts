@@ -4,6 +4,7 @@ import type { WorkflowEventEmitter } from '../events/index.js';
 import {
   getEngineSelectionContext,
   resolveEngineForAgent,
+  resolveEngineAndModelForAgent,
   type EngineConfigFile,
 } from './engine-presets.js';
 
@@ -203,4 +204,22 @@ export async function selectEngine(
 
   debug(`[DEBUG workflow] Engine determined: ${engineType}`);
   return engineType;
+}
+
+/**
+ * Get the model from preset configuration for an agent
+ *
+ * Returns the model if a preset is active and has a model mapping for the agent's tier,
+ * otherwise returns undefined to let the caller use step.model or engine default.
+ */
+export function getPresetModel(agentId: string): string | undefined {
+  const selectionContext = getEngineSelectionContext();
+  const resolution = resolveEngineAndModelForAgent(agentId, selectionContext, cachedConfigFile);
+
+  if (resolution?.model) {
+    debug(`[DEBUG workflow] Preset model for ${agentId}: ${resolution.model}`);
+    return resolution.model;
+  }
+
+  return undefined;
 }

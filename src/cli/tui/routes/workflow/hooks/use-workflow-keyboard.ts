@@ -53,6 +53,8 @@ export interface UseWorkflowKeyboardOptions {
   isAutonomousMode?: () => boolean
   /** Toggle autonomous mode on/off */
   toggleAutonomousMode?: () => void
+  /** Open settings modal */
+  openSettings?: () => void
 }
 
 /**
@@ -96,6 +98,13 @@ export function useWorkflowKeyboard(options: UseWorkflowKeyboardOptions) {
     if (evt.name === "tab") {
       evt.preventDefault()
       options.actions.toggleTimeline()
+      return
+    }
+
+    // Ctrl+O - open settings modal (GLOBAL)
+    if (evt.ctrl && evt.name === "o") {
+      evt.preventDefault()
+      options.openSettings?.()
       return
     }
 

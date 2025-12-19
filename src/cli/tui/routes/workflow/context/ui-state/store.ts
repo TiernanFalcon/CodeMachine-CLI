@@ -11,6 +11,7 @@ import { createSubAgentActions } from "./actions/subagent-actions"
 import { createNavigationActions } from "./actions/navigation-actions"
 import { createWorkflowActions } from "./actions/workflow-actions"
 import { createHistoryActions } from "./actions/history-actions"
+import { createSettingsActions } from "./actions/settings-actions"
 
 const THROTTLE_MS = 16
 
@@ -77,6 +78,12 @@ export function createStore(workflowName: string): UIActions {
     notify,
   })
 
+  const settingsActions = createSettingsActions({
+    getState,
+    setState,
+    notify,
+  })
+
   return {
     getState,
     subscribe,
@@ -85,5 +92,6 @@ export function createStore(workflowName: string): UIActions {
     ...navigationActions,
     ...workflowActions,
     ...historyActions,
+    ...settingsActions,
   }
 }
