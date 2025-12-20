@@ -126,8 +126,10 @@ export function WorkflowShell(props: WorkflowShellProps) {
     ;(process as NodeJS.EventEmitter).on('workflow:user-stop', handleUserStop)
     ;(process as NodeJS.EventEmitter).on('workflow:mode-change', handleModeChange)
 
-    // Load initial autonomous mode state
+    // Load initial state from config files
     const cmRoot = path.join(resolvePath(props.currentDir), '.codemachine')
+
+    // Load autonomous mode state
     debug('onMount - loading controller config from: %s', cmRoot)
     const controllerState = await loadControllerConfig(cmRoot)
     debug('onMount - controllerState: %s', JSON.stringify(controllerState))
@@ -136,6 +138,13 @@ export function WorkflowShell(props: WorkflowShellProps) {
       ui.actions.setAutonomousMode(true)
     } else {
       debug('onMount - autonomousMode not enabled in config')
+    }
+
+    // Load engine preset state
+    const engineConfig = await loadEngineConfig(cmRoot)
+    if (engineConfig?.preset) {
+      debug('onMount - setting engine preset to: %s', engineConfig.preset)
+      ui.actions.setEnginePreset(engineConfig.preset)
     }
 
     if (props.eventBus) {
