@@ -104,16 +104,20 @@ export class WorkflowEventBus {
    * Emit a workflow event to all subscribers
    */
   emit(event: WorkflowEvent): void {
-    // Record in history if enabled
+    // Record in history if enabled (with defensive copy to prevent corruption during iteration)
     if (this.historyEnabled) {
-      this.eventHistory.push(event);
-      if (this.eventHistory.length > this.maxHistorySize) {
-        this.eventHistory.shift();
+      // Create new array to avoid in-place mutation issues
+      const newHistory = [...this.eventHistory, event];
+      // Trim from front if over max size
+      while (newHistory.length > this.maxHistorySize) {
+        newHistory.shift();
       }
+      this.eventHistory = newHistory;
     }
 
-    // Notify general listeners
-    for (const listener of this.listeners) {
+    // Notify general listeners (copy to avoid mutation during iteration)
+    const generalListeners = [...this.listeners];
+    for (const listener of generalListeners) {
       try {
         listener(event);
       } catch (error) {
@@ -121,10 +125,11 @@ export class WorkflowEventBus {
       }
     }
 
-    // Notify typed listeners
+    // Notify typed listeners (copy to avoid mutation during iteration)
     const typedSet = this.typedListeners.get(event.type);
     if (typedSet) {
-      for (const listener of typedSet) {
+      const typedListenersCopy = [...typedSet];
+      for (const listener of typedListenersCopy) {
         try {
           listener(event as WorkflowEventPayload<typeof event.type>);
         } catch (error) {

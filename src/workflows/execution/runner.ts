@@ -125,52 +125,85 @@ export class WorkflowRunner {
     return state?.controllerConfig ?? null;
   }
 
+  // Track registered handlers for cleanup
+  private eventHandlersRegistered = false;
+  private cleanupHandlers: (() => void) | null = null;
+
   private setupListeners(): void {
-    // Pause listener
+    // Prevent duplicate registration
+    if (this.eventHandlersRegistered) {
+      return;
+    }
+    this.eventHandlersRegistered = true;
+
+    // Pause listener with error boundary
     const pauseHandler = () => {
-      debug('[Runner] Pause requested');
-      this.pauseRequested = true;
-      this.abortController?.abort();
-    };
-    process.on('workflow:pause', pauseHandler);
-
-    // Skip listener (Ctrl+S while agent running)
-    const skipHandler = () => {
-      debug('[Runner] Skip requested');
-      this.abortController?.abort();
-    };
-    process.on('workflow:skip', skipHandler);
-
-    // Stop listener
-    const stopHandler = () => {
-      debug('[Runner] Stop requested');
-      this.abortController?.abort();
-      this.machine.send({ type: 'STOP' });
-    };
-    process.on('workflow:stop', stopHandler);
-
-    // Mode change listener
-    const modeChangeHandler = async (data: { autonomousMode: boolean }) => {
-      debug('[Runner] Mode change: autoMode=%s', data.autonomousMode);
-      // If in waiting state, let the provider's listener handle it
-      // The provider will return __SWITCH_TO_AUTO__ or __SWITCH_TO_MANUAL__
-      // and handleWaiting() will call setAutoMode()
-      if (this.machine.state === 'waiting') {
-        debug('[Runner] In waiting state, provider will handle mode switch');
-        return;
+      try {
+        debug('[Runner] Pause requested');
+        this.pauseRequested = true;
+        this.abortController?.abort();
+      } catch (err) {
+        debug('[Runner] Error in pause handler: %s', err);
       }
-      // In other states (running, idle), set auto mode directly
-      await this.setAutoMode(data.autonomousMode);
     };
-    process.on('workflow:mode-change', modeChangeHandler);
+    (process as NodeJS.EventEmitter).on('workflow:pause', pauseHandler);
+
+    // Skip listener with error boundary
+    const skipHandler = () => {
+      try {
+        debug('[Runner] Skip requested');
+        this.abortController?.abort();
+      } catch (err) {
+        debug('[Runner] Error in skip handler: %s', err);
+      }
+    };
+    (process as NodeJS.EventEmitter).on('workflow:skip', skipHandler);
+
+    // Stop listener with error boundary
+    const stopHandler = () => {
+      try {
+        debug('[Runner] Stop requested');
+        this.abortController?.abort();
+        this.machine.send({ type: 'STOP' });
+      } catch (err) {
+        debug('[Runner] Error in stop handler: %s', err);
+      }
+    };
+    (process as NodeJS.EventEmitter).on('workflow:stop', stopHandler);
+
+    // Mode change listener with error boundary
+    const modeChangeHandler = async (data: { autonomousMode: boolean }) => {
+      try {
+        debug('[Runner] Mode change: autoMode=%s', data.autonomousMode);
+        // If in waiting state, let the provider's listener handle it
+        // The provider will return __SWITCH_TO_AUTO__ or __SWITCH_TO_MANUAL__
+        // and handleWaiting() will call setAutoMode()
+        if (this.machine.state === 'waiting') {
+          debug('[Runner] In waiting state, provider will handle mode switch');
+          return;
+        }
+        // In other states (running, idle), set auto mode directly
+        await this.setAutoMode(data.autonomousMode);
+      } catch (err) {
+        debug('[Runner] Error in mode change handler: %s', err);
+      }
+    };
+    (process as NodeJS.EventEmitter).on('workflow:mode-change', modeChangeHandler);
+
+    // Create cleanup function to prevent memory leaks
+    this.cleanupHandlers = () => {
+      (process as NodeJS.EventEmitter).removeListener('workflow:pause', pauseHandler);
+      (process as NodeJS.EventEmitter).removeListener('workflow:skip', skipHandler);
+      (process as NodeJS.EventEmitter).removeListener('workflow:stop', stopHandler);
+      (process as NodeJS.EventEmitter).removeListener('workflow:mode-change', modeChangeHandler);
+      this.eventHandlersRegistered = false;
+    };
 
     // Clean up on machine final state
-    this.machine.subscribe((state) => {
-      if (this.machine.isFinal) {
-        process.removeListener('workflow:pause', pauseHandler);
-        process.removeListener('workflow:skip', skipHandler);
-        process.removeListener('workflow:stop', stopHandler);
-        process.removeListener('workflow:mode-change', modeChangeHandler);
+    this.machine.subscribe(() => {
+      if (this.machine.isFinal && this.cleanupHandlers) {
+        this.cleanupHandlers();
+        this.cleanupHandlers = null;
       }
     });
   }
