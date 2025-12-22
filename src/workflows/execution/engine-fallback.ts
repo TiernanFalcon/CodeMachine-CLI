@@ -230,40 +230,6 @@ function findSoonestReset(
 }
 
 /**
- * Find next available engine (authenticated and not rate-limited)
- */
-async function _findNextAvailableEngine(
-  excludeEngine: string,
-  rateLimitManager: RateLimitManager
-): Promise<string | null> {
-  const engines = registry.getAll();
-
-  for (const engine of engines) {
-    const engineId = engine.metadata.id;
-
-    // Skip excluded engine
-    if (engineId === excludeEngine) continue;
-
-    // Skip rate-limited engines
-    if (!rateLimitManager.isEngineAvailable(engineId)) continue;
-
-    // Check if authenticated
-    const isAuthed = await authCache.isAuthenticated(
-      engineId,
-      () => engine.auth.isAuthenticated()
-    );
-
-    if (isAuthed) {
-      debug('[EngineFallback] Found available fallback engine: %s', engineId);
-      return engineId;
-    }
-  }
-
-  debug('[EngineFallback] No available fallback engines found');
-  return null;
-}
-
-/**
  * Check if any engines are available (not rate-limited and authenticated)
  */
 export async function hasAvailableEngine(

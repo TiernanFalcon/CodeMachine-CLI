@@ -85,15 +85,21 @@ export async function ensureAuth(options?: GeminiAuthOptions): Promise<boolean> 
   console.log(`\nTo use ${metadata.name}, you need a Google AI API key.`);
   console.log(`Get one at: https://aistudio.google.com/app/apikey\n`);
 
-  // Read API key from stdin
+  // Read API key from stdin with timeout
   process.stdout.write('Enter your Google AI API key: ');
 
-  const apiKey = await new Promise<string>((resolve) => {
-    let input = '';
+  const STDIN_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+  const apiKey = await new Promise<string>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      process.stdin.removeAllListeners('data');
+      process.stdin.pause();
+      reject(new Error('Authentication timed out - no input received within 5 minutes.'));
+    }, STDIN_TIMEOUT_MS);
+
     process.stdin.setEncoding('utf8');
     process.stdin.once('data', (data) => {
-      input = data.toString().trim();
-      resolve(input);
+      clearTimeout(timeout);
+      resolve(data.toString().trim());
     });
     process.stdin.resume();
   });
