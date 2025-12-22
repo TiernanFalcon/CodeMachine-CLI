@@ -5,6 +5,7 @@ import {
   getEngineSelectionContext,
   resolveEngineForAgent,
   resolveEngineAndModelForAgent,
+  isFallbackEnabled,
   type EngineConfigFile,
 } from './engine-presets.js';
 
@@ -122,13 +123,18 @@ export async function selectEngine(
     }
   }
 
+  // Check if fallback is enabled
+  const selectionContextForFallback = getEngineSelectionContext();
+  const fallbackAllowed = isFallbackEnabled(selectionContextForFallback, cachedConfigFile);
+  debug(`[DEBUG workflow] Fallback enabled: ${fallbackAllowed}`);
+
   // Determine engine: step override > first authenticated engine
   let engineType: string;
   if (step.engine) {
     debug(`[DEBUG workflow] Using step-specified engine: ${step.engine}`);
     engineType = step.engine;
 
-    // If an override is provided but not authenticated, log and fall back
+    // If an override is provided but not authenticated, log and fall back (if allowed)
     const overrideEngine = registry.get(engineType);
     debug(`[DEBUG workflow] Checking auth for override engine...`);
     const isOverrideAuthed = overrideEngine
@@ -137,6 +143,14 @@ export async function selectEngine(
     debug(`[DEBUG workflow] isOverrideAuthed=${isOverrideAuthed}`);
     if (!isOverrideAuthed) {
       const pretty = overrideEngine?.metadata.name ?? engineType;
+
+      // If fallback is disabled, throw an error instead of falling back
+      if (!fallbackAllowed) {
+        const noFallbackMsg = `${pretty} is not authenticated and fallback is disabled. Run 'codemachine auth login' to authenticate.`;
+        emitter.logMessage(uniqueAgentId, noFallbackMsg);
+        throw new Error(noFallbackMsg);
+      }
+
       const authMsg = `${pretty} override is not authenticated; falling back to first authenticated engine by order. Run 'codemachine auth login' to use ${pretty}.`;
       emitter.logMessage(uniqueAgentId, authMsg);
 

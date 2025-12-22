@@ -167,6 +167,8 @@ export interface WorkflowState {
   autonomousMode: boolean
   /** Currently selected engine preset (null = use step defaults) */
   selectedEnginePreset: string | null
+  /** Whether fallback to other engines is enabled on rate limit (default: true) */
+  fallbackEnabled: boolean
 }
 
 export type ThemeLike = {

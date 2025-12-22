@@ -31,6 +31,8 @@ export interface RunWithFallbackOptions {
   agentId?: string;
   /** Maximum number of fallback attempts */
   maxAttempts?: number;
+  /** Whether fallback to other engines is enabled (default: true) */
+  fallbackEnabled?: boolean;
 }
 
 /**
@@ -69,10 +71,17 @@ export async function runWithFallback(
     emitter,
     agentId,
     maxAttempts = 3,
+    fallbackEnabled = true,
   } = options;
 
-  // Build the full engine list: primary + fallback chain
-  const engineList = [primaryEngine, ...fallbackChain.filter(e => e !== primaryEngine)];
+  // Build the full engine list: primary only if fallback disabled, otherwise primary + fallback chain
+  const engineList = fallbackEnabled
+    ? [primaryEngine, ...fallbackChain.filter(e => e !== primaryEngine)]
+    : [primaryEngine];
+
+  if (!fallbackEnabled) {
+    debug('[EngineFallback] Fallback is disabled - only using primary engine: %s', primaryEngine);
+  }
   const rateLimitedEngines: string[] = [];
   let attempts = 0;
   let engineIndex = 0;
