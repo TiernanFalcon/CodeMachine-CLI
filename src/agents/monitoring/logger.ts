@@ -58,8 +58,14 @@ export class AgentLoggerService {
       mkdirSync(logDir, { recursive: true });
     }
 
-    // Create write stream immediately
+    // Create write stream immediately with error handling
     const stream = createWriteStream(agent.logPath, { flags: 'a', encoding: 'utf-8' });
+
+    // Handle stream errors to prevent silent data loss (ISSUE-025)
+    stream.on('error', (err) => {
+      logger.error(`Stream write error for agent ${agentId}: ${err.message}`);
+    });
+
     this.activeStreams.set(agentId, stream);
 
     // Write header with first line of prompt only
@@ -82,9 +88,13 @@ export class AgentLoggerService {
     stream.write(addMarker('CYAN', `   Prompt: ${promptToLog}\n`));
     stream.write(addMarker('CYAN', `╰${'─'.repeat(boxWidth - 1)}\n\n`));
 
-    // Acquire lock asynchronously in background (after file is created)
+    // Acquire lock asynchronously in background
+    // NOTE: Writes can occur before lock is acquired. This is acceptable because:
+    // 1. We're the only writer in this process (single-threaded)
+    // 2. The lock prevents OTHER processes from writing simultaneously
+    // 3. If lock fails, we log a warning but continue (degraded mode)
     this.lockService.acquireLock(agent.logPath).catch(error => {
-      logger.warn(`Failed to acquire lock for ${agent.logPath}:`, error);
+      logger.warn(`Failed to acquire lock for ${agent.logPath} - continuing without lock: ${error}`);
     });
 
     logger.debug(`Created log stream for agent ${agentId} at ${agent.logPath}`);
