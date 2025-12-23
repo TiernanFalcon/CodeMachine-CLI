@@ -216,9 +216,11 @@ No bounds check before accessing moduleSteps array.
 ### ISSUE-020: Missing config files for providers
 **Severity:** MEDIUM
 **Files:** `auggie/`, `ccr/`, `opencode/`
-**Status:** Open
+**Status:** ✅ Fixed
 
 No configuration interface/constants like other providers.
+
+**Fix:** Added config.ts for CCR provider with interface, resolveModel, DEFAULT_TIMEOUT, and ENV constants. Auggie and OpenCode already had config files.
 
 ---
 
@@ -256,9 +258,11 @@ Different calculations for cached token totals across providers.
 ### ISSUE-024: Duplicate quote parsing logic in coordinator parser
 **Severity:** MEDIUM
 **File:** `src/agents/coordinator/parser.ts:319-463`
-**Status:** Open
+**Status:** ✅ Fixed
 
 Three methods have nearly identical quote tracking logic.
+
+**Fix:** Extracted common logic into `checkQuoteBoundary()` helper method. All three methods (smartSplit, smartSplitMultiChar, containsOutsideQuotes) now use this shared helper.
 
 ---
 
@@ -324,9 +328,9 @@ Should be named constants at module or config level.
 |----------|-------|----------------|
 | Critical | 11 | 7 |
 | High | 8 | 6 |
-| Medium | 8 | 7 |
-| Low | 3 | 1 |
-| **Total** | **30** | **21** |
+| Medium | 8 | 8 |
+| Low | 3 | 2 |
+| **Total** | **30** | **23** |
 
 ### Fixed Issues
 - ISSUE-001: Global state memory leak in Cursor runner
@@ -346,6 +350,8 @@ Should be named constants at module or config level.
 - ISSUE-017: Duplicate timer registration in TUI
 - ISSUE-018: Race condition in checkpoint freeze time
 - ISSUE-019: Missing validation for step index bounds
+- ISSUE-020: Missing config files for providers (CCR added)
 - ISSUE-021: Unused function _findNextAvailableEngine
 - ISSUE-023: Telemetry calculation (verified OK - per-API patterns)
+- ISSUE-024: Duplicate quote parsing logic refactored
 - ISSUE-025: No stream write error handling in logger
