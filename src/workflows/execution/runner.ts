@@ -274,6 +274,17 @@ export class WorkflowRunner {
    */
   private async executeCurrentStep(): Promise<void> {
     const ctx = this.machine.context;
+
+    // Validate step index bounds
+    if (ctx.currentStepIndex < 0 || ctx.currentStepIndex >= this.moduleSteps.length) {
+      const error = new Error(
+        `Step index ${ctx.currentStepIndex} out of bounds (0-${this.moduleSteps.length - 1})`
+      );
+      debug('[Runner] Step index out of bounds: %d', ctx.currentStepIndex);
+      this.machine.send({ type: 'STEP_ERROR', error });
+      return;
+    }
+
     const step = this.moduleSteps[ctx.currentStepIndex];
     const uniqueAgentId = `${step.agentId}-step-${ctx.currentStepIndex}`;
 
@@ -632,8 +643,12 @@ export class WorkflowRunner {
 
     debug('[Runner] Setting auto mode: %s', enabled);
 
-    // Deactivate current provider
-    this.activeProvider.deactivate?.();
+    // Deactivate current provider (with error handling)
+    try {
+      this.activeProvider.deactivate?.();
+    } catch (deactivateError) {
+      debug('[Runner] Error deactivating provider: %o', deactivateError);
+    }
 
     // Update context
     ctx.autoMode = enabled;
@@ -644,7 +659,13 @@ export class WorkflowRunner {
     } else {
       this.activeProvider = this.userInput;
     }
-    this.activeProvider.activate?.();
+
+    // Activate with error handling
+    try {
+      this.activeProvider.activate?.();
+    } catch (activateError) {
+      debug('[Runner] Error activating provider: %o', activateError);
+    }
   }
 
   /**

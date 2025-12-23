@@ -73,9 +73,11 @@ No synchronization when accessing/modifying `eventHistory` - concurrent emission
 ### ISSUE-007: State machine transitions not atomic
 **Severity:** HIGH
 **File:** `src/workflows/state/machine.ts:70-91`
-**Status:** Open
+**Status:** ✅ Fixed
 
 State change not atomic with callbacks - if onExit or action throws, state is in inconsistent state.
+
+**Fix:** Wrapped transition callbacks in try-catch. onExit/action errors prevent state change, onEnter errors are logged but don't revert.
 
 ---
 
@@ -124,27 +126,33 @@ Agent status update is fire-and-forget - if repository update fails, memory/disk
 ### ISSUE-012: CCR telemetry uses wrong engine type
 **Severity:** MEDIUM
 **File:** `src/infra/engines/providers/ccr/execution/runner.ts:162`
-**Status:** Open
+**Status:** ✅ Fixed
 
 Telemetry capture initialized with 'claude' instead of 'ccr'.
+
+**Fix:** Changed telemetry capture to use 'ccr' as the engine type.
 
 ---
 
 ### ISSUE-013: Missing error handling in input provider mode switch
 **Severity:** MEDIUM-HIGH
 **File:** `src/workflows/execution/runner.ts:593-615`
-**Status:** Open
+**Status:** ✅ Fixed
 
 `deactivate()` and `activate()` methods called without try-catch.
+
+**Fix:** Wrapped deactivate() and activate() calls in try-catch with debug logging.
 
 ---
 
 ### ISSUE-014: Promise.all fails on partial file read failure
 **Severity:** MEDIUM-HIGH
 **File:** `src/workflows/execution/step.ts:87-93`
-**Status:** Open
+**Status:** ✅ Fixed
 
 Using `Promise.all()` instead of `Promise.allSettled()` - if ANY file read fails, entire operation fails.
+
+**Fix:** Changed to Promise.allSettled() with proper handling - succeeds if at least one file loads, fails only if all files fail.
 
 ---
 
@@ -187,9 +195,11 @@ Multiple overlapping effects manage `checkpointFreezeTime` without guard.
 ### ISSUE-019: Missing validation for step index bounds
 **Severity:** MEDIUM
 **File:** `src/workflows/execution/runner.ts:242-245`
-**Status:** Open
+**Status:** ✅ Fixed
 
 No bounds check before accessing moduleSteps array.
+
+**Fix:** Added bounds validation at start of executeCurrentStep() - sends STEP_ERROR if index out of range.
 
 ---
 
@@ -300,11 +310,11 @@ Should be named constants at module or config level.
 
 | Priority | Count | Fixed |
 |----------|-------|-------|
-| Critical | 11 | 4 |
+| Critical | 11 | 5 |
 | High | 8 | 5 |
-| Medium | 8 | 0 |
+| Medium | 8 | 4 |
 | Low | 3 | 1 |
-| **Total** | **30** | **10** |
+| **Total** | **30** | **15** |
 
 ### Fixed Issues
 - ISSUE-001: Global state memory leak in Cursor runner
@@ -312,7 +322,12 @@ Should be named constants at module or config level.
 - ISSUE-004: Race condition in workflow event handlers
 - ISSUE-005: Event listener memory leak in workflow runner
 - ISSUE-006: Corrupted event history on concurrent emit
+- ISSUE-007: State machine transitions not atomic
 - ISSUE-009: Stream created before lock acquired in logger
 - ISSUE-010: Database updates not in transaction
+- ISSUE-012: CCR telemetry uses wrong engine type
+- ISSUE-013: Missing error handling in input provider mode switch
+- ISSUE-014: Promise.all fails on partial file read failure
+- ISSUE-019: Missing validation for step index bounds
 - ISSUE-021: Unused function _findNextAvailableEngine
 - ISSUE-025: No stream write error handling in logger
