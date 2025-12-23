@@ -84,9 +84,11 @@ State change not atomic with callbacks - if onExit or action throws, state is in
 ### ISSUE-008: Orphaned process event listeners in TUI
 **Severity:** HIGH
 **File:** `src/cli/tui/routes/workflow/workflow-shell.tsx:124-127`
-**Status:** Open
+**Status:** ✅ Verified OK
 
 Event listeners have incomplete cleanup if view switches before unmounting.
+
+**Note:** Code review shows proper cleanup in onCleanup() at lines 162-170. All four event listeners are properly removed.
 
 ---
 
@@ -186,9 +188,11 @@ Two independent 1-second intervals updating the same runtime value.
 ### ISSUE-018: Race condition in checkpoint freeze time
 **Severity:** MEDIUM
 **File:** `src/cli/tui/routes/workflow/workflow-shell.tsx:179-194`
-**Status:** Open
+**Status:** ✅ Fixed
 
 Multiple overlapping effects manage `checkpointFreezeTime` without guard.
+
+**Fix:** Merged two separate createEffect calls into a single unified effect with clear shouldFreeze logic.
 
 ---
 
@@ -308,13 +312,13 @@ Should be named constants at module or config level.
 
 ## Summary
 
-| Priority | Count | Fixed |
-|----------|-------|-------|
-| Critical | 11 | 5 |
+| Priority | Count | Fixed/Verified |
+|----------|-------|----------------|
+| Critical | 11 | 6 |
 | High | 8 | 5 |
-| Medium | 8 | 4 |
+| Medium | 8 | 5 |
 | Low | 3 | 1 |
-| **Total** | **30** | **15** |
+| **Total** | **30** | **17** |
 
 ### Fixed Issues
 - ISSUE-001: Global state memory leak in Cursor runner
@@ -323,11 +327,13 @@ Should be named constants at module or config level.
 - ISSUE-005: Event listener memory leak in workflow runner
 - ISSUE-006: Corrupted event history on concurrent emit
 - ISSUE-007: State machine transitions not atomic
+- ISSUE-008: Orphaned process event listeners in TUI (verified OK)
 - ISSUE-009: Stream created before lock acquired in logger
 - ISSUE-010: Database updates not in transaction
 - ISSUE-012: CCR telemetry uses wrong engine type
 - ISSUE-013: Missing error handling in input provider mode switch
 - ISSUE-014: Promise.all fails on partial file read failure
+- ISSUE-018: Race condition in checkpoint freeze time
 - ISSUE-019: Missing validation for step index bounds
 - ISSUE-021: Unused function _findNextAvailableEngine
 - ISSUE-025: No stream write error handling in logger

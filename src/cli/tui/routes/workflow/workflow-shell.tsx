@@ -175,20 +175,20 @@ export function WorkflowShell(props: WorkflowShellProps) {
   // Unified input waiting check
   const isWaitingForInput = () => state().inputState?.active ?? false
 
-  // Timer freeze effects
+  // Timer freeze effect - unified handler for checkpoint and input waiting states
   createEffect(() => {
     const checkpointState = state().checkpointState
-    if (checkpointState?.active && !checkpointFreezeTime()) {
-      setCheckpointFreezeTime(Date.now())
-    } else if (!checkpointState?.active && checkpointFreezeTime() && !isWaitingForInput()) {
-      setCheckpointFreezeTime(undefined)
-    }
-  })
+    const waitingForInput = isWaitingForInput()
+    const currentFreezeTime = checkpointFreezeTime()
 
-  createEffect(() => {
-    if (isWaitingForInput() && !checkpointFreezeTime()) {
+    // Should freeze timer when either checkpoint is active or waiting for input
+    const shouldFreeze = checkpointState?.active || waitingForInput
+
+    if (shouldFreeze && !currentFreezeTime) {
+      // Start freezing - set freeze time
       setCheckpointFreezeTime(Date.now())
-    } else if (!isWaitingForInput() && checkpointFreezeTime() && !state().checkpointState?.active) {
+    } else if (!shouldFreeze && currentFreezeTime) {
+      // Stop freezing - clear freeze time
       setCheckpointFreezeTime(undefined)
     }
   })
