@@ -18,6 +18,7 @@ import { CheckpointModal, LogViewer, HistoryView, StopModal, ErrorModal, Setting
 import { OpenTUIAdapter } from "./adapters/opentui"
 import { useLogStream } from "./hooks/useLogStream"
 import { useSubAgentSync } from "./hooks/useSubAgentSync"
+import { useTick } from "@tui/shared/hooks/tick"
 import { useWorkflowModals } from "./hooks/use-workflow-modals"
 import { useWorkflowKeyboard } from "./hooks/use-workflow-keyboard"
 import { calculateVisibleItems } from "./constants"
@@ -193,10 +194,8 @@ export function WorkflowShell(props: WorkflowShellProps) {
     }
   })
 
-  // Runtime tick
-  const [tick, setTick] = createSignal(0)
-  const tickInterval = setInterval(() => setTick((t) => t + 1), 1000)
-  onCleanup(() => clearInterval(tickInterval))
+  // Use shared tick for runtime updates (singleton interval across components)
+  const tick = useTick()
 
   // Current agent for output
   const currentAgent = createMemo(() => {

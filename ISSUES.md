@@ -178,10 +178,12 @@ Should be split into smaller components.
 
 ### ISSUE-017: Duplicate timer registration in TUI store
 **Severity:** MEDIUM
-**File:** `src/cli/tui/routes/workflow/context/ui-state/store.ts:16-28`
-**Status:** Open
+**File:** `src/cli/tui/routes/workflow/workflow-shell.tsx:197-199`
+**Status:** ✅ Fixed
 
 Two independent 1-second intervals updating the same runtime value.
+
+**Fix:** Replaced local tick interval with shared useTick() hook, which uses singleton pattern with reference counting.
 
 ---
 
@@ -316,9 +318,9 @@ Should be named constants at module or config level.
 |----------|-------|----------------|
 | Critical | 11 | 6 |
 | High | 8 | 5 |
-| Medium | 8 | 5 |
+| Medium | 8 | 6 |
 | Low | 3 | 1 |
-| **Total** | **30** | **17** |
+| **Total** | **30** | **18** |
 
 ### Fixed Issues
 - ISSUE-001: Global state memory leak in Cursor runner
@@ -333,6 +335,7 @@ Should be named constants at module or config level.
 - ISSUE-012: CCR telemetry uses wrong engine type
 - ISSUE-013: Missing error handling in input provider mode switch
 - ISSUE-014: Promise.all fails on partial file read failure
+- ISSUE-017: Duplicate timer registration in TUI
 - ISSUE-018: Race condition in checkpoint freeze time
 - ISSUE-019: Missing validation for step index bounds
 - ISSUE-021: Unused function _findNextAvailableEngine
