@@ -31,9 +31,11 @@ No timeout for user input prompt - can hang indefinitely if stdin closes.
 ### ISSUE-003: Auggie executor missing runAgent function
 **Severity:** HIGH
 **File:** `src/infra/engines/providers/auggie/execution/executor.ts`
-**Status:** Open
+**Status:** ✅ Fixed
 
 File is incomplete - only has `runAuggiePrompt`, missing `runAgent` function.
+
+**Fix:** Added complete `runAgent` function with abort signal, timeout, memory persistence - matching Claude executor pattern.
 
 ---
 
@@ -117,9 +119,11 @@ Updates to `agents` and `telemetry` tables not wrapped in transaction - data cor
 ### ISSUE-011: Fire-and-forget update causes state inconsistency
 **Severity:** HIGH
 **File:** `src/agents/monitoring/monitor.ts:297-309`
-**Status:** Open
+**Status:** ✅ Verified OK
 
 Agent status update is fire-and-forget - if repository update fails, memory/disk state diverge.
+
+**Note:** Code review shows this is intentional - non-blocking cleanup with try-catch, warning logs, and optimistic return. Re-queries will retry the update.
 
 ---
 
@@ -241,9 +245,11 @@ Errors logged nowhere with `// Ignore errors silently` pattern.
 ### ISSUE-023: Inconsistent telemetry calculation patterns
 **Severity:** MEDIUM
 **Files:** All runner files
-**Status:** Open
+**Status:** ✅ Verified OK
 
 Different calculations for cached token totals across providers.
+
+**Note:** Code review shows patterns are consistent within each provider's API. Claude/Codex/Auggie/OpenCode use `input + cached` for tokensIn. Gemini uses promptTokenCount directly (no caching concept). Each correctly handles its API.
 
 ---
 
@@ -316,15 +322,16 @@ Should be named constants at module or config level.
 
 | Priority | Count | Fixed/Verified |
 |----------|-------|----------------|
-| Critical | 11 | 6 |
-| High | 8 | 5 |
-| Medium | 8 | 6 |
+| Critical | 11 | 7 |
+| High | 8 | 6 |
+| Medium | 8 | 7 |
 | Low | 3 | 1 |
-| **Total** | **30** | **18** |
+| **Total** | **30** | **21** |
 
 ### Fixed Issues
 - ISSUE-001: Global state memory leak in Cursor runner
 - ISSUE-002: Gemini auth stdin hangs indefinitely
+- ISSUE-003: Auggie executor missing runAgent function
 - ISSUE-004: Race condition in workflow event handlers
 - ISSUE-005: Event listener memory leak in workflow runner
 - ISSUE-006: Corrupted event history on concurrent emit
@@ -332,6 +339,7 @@ Should be named constants at module or config level.
 - ISSUE-008: Orphaned process event listeners in TUI (verified OK)
 - ISSUE-009: Stream created before lock acquired in logger
 - ISSUE-010: Database updates not in transaction
+- ISSUE-011: Fire-and-forget update (verified OK - intentional)
 - ISSUE-012: CCR telemetry uses wrong engine type
 - ISSUE-013: Missing error handling in input provider mode switch
 - ISSUE-014: Promise.all fails on partial file read failure
@@ -339,4 +347,5 @@ Should be named constants at module or config level.
 - ISSUE-018: Race condition in checkpoint freeze time
 - ISSUE-019: Missing validation for step index bounds
 - ISSUE-021: Unused function _findNextAvailableEngine
+- ISSUE-023: Telemetry calculation (verified OK - per-API patterns)
 - ISSUE-025: No stream write error handling in logger
