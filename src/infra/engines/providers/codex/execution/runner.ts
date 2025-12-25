@@ -292,7 +292,7 @@ export async function runCodex(options: RunCodexOptions): Promise<RunCodexResult
       };
     }
 
-    throw new Error(preview);
+    throw new Error(`Codex CLI exited with code ${result.exitCode}: ${preview}`);
   }
 
   // Log captured telemetry

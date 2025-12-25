@@ -25,7 +25,7 @@ describe('workflow modules', () => {
     it('behavior is now controlled via behavior.json, not triggers', () => {
       const step = resolveModule('check-task');
 
-      expect(step.agentName).toBe('Task Completion Checker');
+      expect(step.agentName).toBe('Task Loop Checker');
       // Behavior is now always present for loop-enabled modules
       expect(step.module?.behavior).toBeDefined();
       expect(step.module?.behavior?.type).toBe('loop');
