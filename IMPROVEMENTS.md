@@ -9,7 +9,7 @@ This document tracks planned improvements, enhancements, and technical debt item
 | Priority | Item | Description | Status |
 |----------|------|-------------|--------|
 | High | **Agent Runner Refactor** | Break up 320-line god function in `src/agents/runner/runner.ts` into smaller, testable units | ✅ Done |
-| High | **PromptLine Component** | Split 402-line component `src/cli/tui/routes/workflow/components/output/prompt-line.tsx` into smaller sub-components | Open |
+| High | **PromptLine Component** | Split 402-line component `src/cli/tui/routes/workflow/components/output/prompt-line.tsx` into smaller sub-components | ✅ Done |
 | Medium | **Parser DRY Opportunities** | Review `src/agents/coordinator/parser.ts` for additional DRY improvements | Open |
 | Low | **Magic Numbers** | Extract hardcoded constants (timeouts, limits, thresholds) into named constants | Open |
 
@@ -82,14 +82,14 @@ This document tracks planned improvements, enhancements, and technical debt item
 
 | Category | High | Medium | Low | Total |
 |----------|------|--------|-----|-------|
-| Code Quality | 1 | 1 | 1 | 3 |
+| Code Quality | 0 | 1 | 1 | 2 |
 | Testing | 1 | 2 | 0 | 3 |
 | Features | 0 | 2 | 1 | 3 |
 | Architecture | 0 | 3 | 1 | 4 |
 | Documentation | 0 | 2 | 1 | 3 |
 | Performance | 0 | 2 | 1 | 3 |
 | DevOps | 0 | 2 | 1 | 3 |
-| **Total** | **2** | **14** | **6** | **22** |
+| **Total** | **1** | **14** | **6** | **21** |
 
 ---
 
@@ -97,6 +97,7 @@ This document tracks planned improvements, enhancements, and technical debt item
 
 | Date | Item | Change |
 |------|------|--------|
+| 2025-12-25 | PromptLine Split | Split 402-line component into 4 focused modules (212 lines main, modal, hook, helpers) |
 | 2025-12-25 | Runner Refactor | Extracted helpers from 320-line executeAgent into resolveEngine, initializeMonitoring, resolveResumeSession |
 | 2025-12-25 | Telemetry Tests | Added 41 tests for all telemetryParser.ts files (100% coverage) |
 | 2025-12-25 | Log Rotation | Implemented size-based log rotation (10MB limit, 5 backups) |
