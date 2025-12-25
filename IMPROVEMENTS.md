@@ -19,7 +19,7 @@ This document tracks planned improvements, enhancements, and technical debt item
 
 | Priority | Item | Description | Status |
 |----------|------|-------------|--------|
-| High | **TelemetryParser Coverage** | Add tests for `telemetryParser.ts` files (currently at 0% coverage) | Open |
+| High | **TelemetryParser Coverage** | Add tests for `telemetryParser.ts` files (currently at 0% coverage) | ✅ Done |
 | High | **Integration Tests** | Add end-to-end workflow execution tests | Open |
 | Medium | **Provider Tests** | Improve coverage for engine providers (Gemini, Auggie, OpenCode) | Open |
 | Medium | **TUI Component Tests** | Add UI component testing with mock adapters | Open |
@@ -83,13 +83,13 @@ This document tracks planned improvements, enhancements, and technical debt item
 | Category | High | Medium | Low | Total |
 |----------|------|--------|-----|-------|
 | Code Quality | 2 | 1 | 1 | 4 |
-| Testing | 2 | 2 | 0 | 4 |
+| Testing | 1 | 2 | 0 | 3 |
 | Features | 0 | 2 | 1 | 3 |
 | Architecture | 0 | 3 | 1 | 4 |
 | Documentation | 0 | 2 | 1 | 3 |
 | Performance | 0 | 2 | 1 | 3 |
 | DevOps | 0 | 2 | 1 | 3 |
-| **Total** | **4** | **14** | **6** | **24** |
+| **Total** | **3** | **14** | **6** | **23** |
 
 ---
 
@@ -97,5 +97,6 @@ This document tracks planned improvements, enhancements, and technical debt item
 
 | Date | Item | Change |
 |------|------|--------|
+| 2025-12-25 | Telemetry Tests | Added 41 tests for all telemetryParser.ts files (100% coverage) |
 | 2025-12-25 | Log Rotation | Implemented size-based log rotation (10MB limit, 5 backups) |
 | 2025-12-25 | Initial | Created roadmap document |
