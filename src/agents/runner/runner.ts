@@ -48,6 +48,186 @@ class EngineAuthCache {
 // Global auth cache instance (shared across all subagent executions)
 const authCache = new EngineAuthCache();
 
+// --------------------------------------------------------------------------
+// Helper Types
+// --------------------------------------------------------------------------
+
+interface EngineResolution {
+  engineType: EngineType;
+  engineModule: Awaited<ReturnType<typeof import('../../infra/engines/index.js').registry.get>>;
+  model: string | undefined;
+  modelReasoningEffort: 'low' | 'medium' | 'high' | undefined;
+}
+
+interface MonitoringContext {
+  monitor: AgentMonitorService | null;
+  loggerService: AgentLoggerService | null;
+  monitoringAgentId: number | undefined;
+}
+
+// --------------------------------------------------------------------------
+// Engine Resolution Helpers
+// --------------------------------------------------------------------------
+
+/**
+ * Resolve which engine to use based on overrides and config
+ */
+async function resolveEngine(
+  agentId: string,
+  agentConfig: Awaited<ReturnType<typeof loadAgentConfig>>,
+  engineOverride?: EngineType
+): Promise<EngineResolution> {
+  const { registry } = await import('../../infra/engines/index.js');
+
+  let engineType: EngineType;
+
+  if (engineOverride) {
+    engineType = engineOverride;
+  } else if (agentConfig.engine) {
+    engineType = agentConfig.engine;
+  } else {
+    // Fallback: find first authenticated engine by order (WITH CACHING)
+    const engines = registry.getAll();
+    let foundEngine = null;
+
+    for (const engine of engines) {
+      const isAuth = await authCache.isAuthenticated(
+        engine.metadata.id,
+        () => engine.auth.isAuthenticated()
+      );
+      if (isAuth) {
+        foundEngine = engine;
+        break;
+      }
+    }
+
+    if (!foundEngine) {
+      foundEngine = registry.getDefault();
+    }
+
+    if (!foundEngine) {
+      throw new Error('No engines registered. Please install at least one engine.');
+    }
+
+    engineType = foundEngine.metadata.id;
+    info(`No engine specified for agent '${agentId}', using ${foundEngine.metadata.name} (${engineType})`);
+  }
+
+  // Ensure authentication
+  await ensureEngineAuth(engineType);
+
+  const engineModule = registry.get(engineType);
+  if (!engineModule) {
+    throw new Error(`Engine not found: ${engineType}`);
+  }
+
+  // Model resolution: CLI override > agent config > engine default
+  const model = (agentConfig.model as string | undefined) ?? engineModule.metadata.defaultModel;
+  const modelReasoningEffort = (agentConfig.modelReasoningEffort as 'low' | 'medium' | 'high' | undefined) ?? engineModule.metadata.defaultModelReasoningEffort;
+
+  return { engineType, engineModule, model, modelReasoningEffort };
+}
+
+// --------------------------------------------------------------------------
+// Monitoring Helpers
+// --------------------------------------------------------------------------
+
+/**
+ * Initialize monitoring context (register or resume agent)
+ */
+async function initializeMonitoring(
+  options: {
+    disableMonitoring?: boolean;
+    resumeMonitoringId?: number;
+    ui?: AgentExecutionUI;
+    uniqueAgentId?: string;
+    displayPrompt?: string;
+    parentId?: number;
+  },
+  agentId: string,
+  prompt: string,
+  engineType: EngineType,
+  model: string | undefined
+): Promise<MonitoringContext> {
+  if (options.disableMonitoring) {
+    return { monitor: null, loggerService: null, monitoringAgentId: undefined };
+  }
+
+  const monitor = AgentMonitorService.getInstance();
+  const loggerService = AgentLoggerService.getInstance();
+  let monitoringAgentId: number | undefined;
+
+  if (options.resumeMonitoringId !== undefined) {
+    // RESUME: Use existing monitoring entry
+    monitoringAgentId = options.resumeMonitoringId;
+    debug(`[AgentRunner] RESUME: Using existing monitoringId=%d`, monitoringAgentId);
+
+    await monitor.markRunning(monitoringAgentId);
+
+    if (options.ui && options.uniqueAgentId) {
+      debug(`[AgentRunner] RESUME: Registering monitoringId=%d with UI`, monitoringAgentId);
+      options.ui.registerMonitoringId(options.uniqueAgentId, monitoringAgentId);
+    }
+  } else {
+    // NEW EXECUTION: Register new monitoring entry
+    const promptForDisplay = options.displayPrompt || prompt;
+    debug(`[AgentRunner] NEW: Registering monitoring for agentId=%s`, agentId);
+
+    monitoringAgentId = await monitor.register({
+      name: agentId,
+      prompt: promptForDisplay,
+      parentId: options.parentId,
+      engine: engineType,
+      engineProvider: engineType,
+      modelName: model,
+    });
+    debug(`[AgentRunner] NEW: Registered with monitoringId=%d`, monitoringAgentId);
+
+    // Store full prompt for debug mode logging
+    loggerService.storeFullPrompt(monitoringAgentId, prompt);
+
+    if (options.ui && options.uniqueAgentId && monitoringAgentId !== undefined) {
+      debug(`[AgentRunner] NEW: Registering monitoringId=%d with UI`, monitoringAgentId);
+      options.ui.registerMonitoringId(options.uniqueAgentId, monitoringAgentId);
+    }
+  }
+
+  return { monitor, loggerService, monitoringAgentId };
+}
+
+// --------------------------------------------------------------------------
+// Session Resume Helpers
+// --------------------------------------------------------------------------
+
+/**
+ * Resolve resume session ID from options
+ */
+async function resolveResumeSession(
+  resumeSessionIdOption?: string,
+  resumeMonitoringId?: number
+): Promise<string | undefined> {
+  if (resumeSessionIdOption) {
+    return resumeSessionIdOption;
+  }
+
+  if (resumeMonitoringId !== undefined) {
+    const monitor = AgentMonitorService.getInstance();
+    const resumeAgent = monitor.getAgent(resumeMonitoringId);
+    debug(`[AgentRunner] Looking up sessionId from monitoringId=%d`, resumeMonitoringId);
+
+    if (resumeAgent?.sessionId) {
+      debug(`[AgentRunner] Using sessionId %s from monitoringId %d`, resumeAgent.sessionId, resumeMonitoringId);
+      return resumeAgent.sessionId;
+    }
+  }
+
+  return undefined;
+}
+
+// --------------------------------------------------------------------------
+// Public Interface
+// --------------------------------------------------------------------------
+
 /**
  * Minimal UI interface for agent execution
  */
@@ -217,121 +397,31 @@ export async function executeAgent(
   debug(`[AgentRunner] Resume options: resumeMonitoringId=%s resumeSessionId=%s resumePrompt=%s`,
     resumeMonitoringId ?? '(none)', resumeSessionIdOption ?? '(none)', resumePrompt ? resumePrompt.slice(0, 50) + '...' : '(none)');
 
-  // If resuming, use direct sessionId or look up from monitor
-  let resumeSessionId: string | undefined = resumeSessionIdOption;
-  if (!resumeSessionId && resumeMonitoringId !== undefined) {
-    const monitor = AgentMonitorService.getInstance();
-    const resumeAgent = monitor.getAgent(resumeMonitoringId);
-    debug(`[AgentRunner] Looking up sessionId from monitoringId=%d, found agent=%s`,
-      resumeMonitoringId, resumeAgent ? 'yes' : 'no');
-    if (resumeAgent?.sessionId) {
-      resumeSessionId = resumeAgent.sessionId;
-      debug(`[AgentRunner] Using sessionId %s from monitoringId %d`, resumeSessionId, resumeMonitoringId);
-    }
-  }
+  // Resolve resume session ID
+  const resumeSessionId = await resolveResumeSession(resumeSessionIdOption, resumeMonitoringId);
   if (resumeSessionId) {
     debug(`[AgentRunner] Will resume with sessionId: %s`, resumeSessionId);
   }
 
-  // Load agent config to determine engine and model
+  // Load agent config and resolve engine/model
   const agentConfig = await loadAgentConfig(agentId, projectRoot ?? workingDir);
+  const { engineType, model: resolvedModel, modelReasoningEffort } = await resolveEngine(
+    agentId,
+    agentConfig,
+    engineOverride
+  );
 
-  // Determine engine: CLI override > agent config > first authenticated engine
-  const { registry } = await import('../../infra/engines/index.js');
-  let engineType: EngineType;
+  // Apply model override if provided
+  const model = modelOverride ?? resolvedModel;
 
-  if (engineOverride) {
-    engineType = engineOverride;
-  } else if (agentConfig.engine) {
-    engineType = agentConfig.engine;
-  } else {
-    // Fallback: find first authenticated engine by order (WITH CACHING - critical for subagents)
-    const engines = registry.getAll();
-    let foundEngine = null;
-
-    for (const engine of engines) {
-      // Use cached auth check to avoid 10-30 second delays per subagent
-      const isAuth = await authCache.isAuthenticated(
-        engine.metadata.id,
-        () => engine.auth.isAuthenticated()
-      );
-      if (isAuth) {
-        foundEngine = engine;
-        break;
-      }
-    }
-
-    if (!foundEngine) {
-      // If no authenticated engine, use default (first by order)
-      foundEngine = registry.getDefault();
-    }
-
-    if (!foundEngine) {
-      throw new Error('No engines registered. Please install at least one engine.');
-    }
-
-    engineType = foundEngine.metadata.id;
-    info(`No engine specified for agent '${agentId}', using ${foundEngine.metadata.name} (${engineType})`);
-  }
-
-  // Ensure authentication
-  await ensureEngineAuth(engineType);
-
-  // Get engine module for defaults
-  const engineModule = registry.get(engineType);
-  if (!engineModule) {
-    throw new Error(`Engine not found: ${engineType}`);
-  }
-
-  // Model resolution: CLI override > agent config (legacy) > engine default
-  const model = modelOverride ?? (agentConfig.model as string | undefined) ?? engineModule.metadata.defaultModel;
-  const modelReasoningEffort = (agentConfig.modelReasoningEffort as 'low' | 'medium' | 'high' | undefined) ?? engineModule.metadata.defaultModelReasoningEffort;
-
-  // Initialize monitoring with engine/model info (unless explicitly disabled)
-  const monitor = !disableMonitoring ? AgentMonitorService.getInstance() : null;
-  const loggerService = !disableMonitoring ? AgentLoggerService.getInstance() : null;
-  let monitoringAgentId: number | undefined;
-
-  if (monitor && loggerService) {
-    if (resumeMonitoringId !== undefined) {
-      // RESUME: Use existing monitoring entry (skip registration, use existing log file)
-      monitoringAgentId = resumeMonitoringId;
-      debug(`[AgentRunner] RESUME: Using existing monitoringId=%d, skipping registration`, monitoringAgentId);
-
-      // Mark as running again (was paused)
-      await monitor.markRunning(monitoringAgentId);
-      debug(`[AgentRunner] RESUME: Marked agent as running`);
-
-      // Register monitoring ID with UI so it can load existing logs
-      if (ui && uniqueAgentId) {
-        debug(`[AgentRunner] RESUME: Registering monitoringId=%d with UI (uniqueAgentId=%s)`, monitoringAgentId, uniqueAgentId);
-        ui.registerMonitoringId(uniqueAgentId, monitoringAgentId);
-      }
-    } else {
-      // NEW EXECUTION: Register new monitoring entry
-      const promptForDisplay = displayPrompt || prompt;
-      debug(`[AgentRunner] NEW: Registering new monitoring entry for agentId=%s`, agentId);
-      monitoringAgentId = await monitor.register({
-        name: agentId,
-        prompt: promptForDisplay, // This gets truncated in monitor for memory efficiency
-        parentId,
-        engine: engineType,
-        engineProvider: engineType,
-        modelName: model,
-      });
-      debug(`[AgentRunner] NEW: Registered with monitoringId=%d`, monitoringAgentId);
-
-      // Store FULL prompt for debug mode logging (not the display prompt)
-      // In debug mode, we want to see the complete composite prompt with template + input files
-      loggerService.storeFullPrompt(monitoringAgentId, prompt);
-
-      // Register monitoring ID with UI immediately so it can load logs
-      if (ui && uniqueAgentId && monitoringAgentId !== undefined) {
-        debug(`[AgentRunner] NEW: Registering monitoringId=%d with UI (uniqueAgentId=%s)`, monitoringAgentId, uniqueAgentId);
-        ui.registerMonitoringId(uniqueAgentId, monitoringAgentId);
-      }
-    }
-  }
+  // Initialize monitoring
+  const { monitor, loggerService, monitoringAgentId } = await initializeMonitoring(
+    { disableMonitoring, resumeMonitoringId, ui, uniqueAgentId, displayPrompt, parentId },
+    agentId,
+    prompt,
+    engineType,
+    model
+  );
 
   // Set up memory
   const memoryDir = path.resolve(workingDir, '.codemachine', 'memory');
