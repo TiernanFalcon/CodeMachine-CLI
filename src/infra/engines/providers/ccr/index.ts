@@ -12,6 +12,7 @@ import { runCcr } from './execution/index.js';
 
 // Export all sub-modules
 export * from './auth.js';
+export * from './config.js';
 export * from './execution/index.js';
 export { metadata };
 

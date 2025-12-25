@@ -1,7 +1,7 @@
 /**
  * Settings Actions
  *
- * Actions for managing settings like engine presets.
+ * Actions for managing settings like engine presets and fallback.
  */
 
 import type { WorkflowState } from "../types"
@@ -20,7 +20,15 @@ export function createSettingsActions(ctx: SettingsActionsContext) {
     ctx.notify()
   }
 
+  function setFallbackEnabled(enabled: boolean): void {
+    const state = ctx.getState()
+    if (state.fallbackEnabled === enabled) return
+    ctx.setState({ ...state, fallbackEnabled: enabled })
+    ctx.notify()
+  }
+
   return {
     setEnginePreset,
+    setFallbackEnabled,
   }
 }

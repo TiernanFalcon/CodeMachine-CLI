@@ -31,6 +31,8 @@ export interface RunWithFallbackOptions {
   agentId?: string;
   /** Maximum number of fallback attempts */
   maxAttempts?: number;
+  /** Whether fallback to other engines is enabled (default: true) */
+  fallbackEnabled?: boolean;
 }
 
 /**
@@ -69,10 +71,17 @@ export async function runWithFallback(
     emitter,
     agentId,
     maxAttempts = 3,
+    fallbackEnabled = true,
   } = options;
 
-  // Build the full engine list: primary + fallback chain
-  const engineList = [primaryEngine, ...fallbackChain.filter(e => e !== primaryEngine)];
+  // Build the full engine list: primary only if fallback disabled, otherwise primary + fallback chain
+  const engineList = fallbackEnabled
+    ? [primaryEngine, ...fallbackChain.filter(e => e !== primaryEngine)]
+    : [primaryEngine];
+
+  if (!fallbackEnabled) {
+    debug('[EngineFallback] Fallback is disabled - only using primary engine: %s', primaryEngine);
+  }
   const rateLimitedEngines: string[] = [];
   let attempts = 0;
   let engineIndex = 0;
@@ -218,40 +227,6 @@ function findSoonestReset(
   }
 
   return { soonestEngine, soonestResetAt };
-}
-
-/**
- * Find next available engine (authenticated and not rate-limited)
- */
-async function _findNextAvailableEngine(
-  excludeEngine: string,
-  rateLimitManager: RateLimitManager
-): Promise<string | null> {
-  const engines = registry.getAll();
-
-  for (const engine of engines) {
-    const engineId = engine.metadata.id;
-
-    // Skip excluded engine
-    if (engineId === excludeEngine) continue;
-
-    // Skip rate-limited engines
-    if (!rateLimitManager.isEngineAvailable(engineId)) continue;
-
-    // Check if authenticated
-    const isAuthed = await authCache.isAuthenticated(
-      engineId,
-      () => engine.auth.isAuthenticated()
-    );
-
-    if (isAuthed) {
-      debug('[EngineFallback] Found available fallback engine: %s', engineId);
-      return engineId;
-    }
-  }
-
-  debug('[EngineFallback] No available fallback engines found');
-  return null;
 }
 
 /**

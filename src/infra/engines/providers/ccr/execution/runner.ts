@@ -159,7 +159,7 @@ export async function runCcr(options: RunCcrOptions): Promise<RunCcrResult> {
   logger.debug(`CCR runner - args count: ${args.length}, model: ${model ?? 'default'}`);
 
   // Create telemetry capture instance
-  const telemetryCapture = createTelemetryCapture('claude', model, prompt, workingDir); // Using 'claude' for telemetry since API is the same
+  const telemetryCapture = createTelemetryCapture('ccr', model, prompt, workingDir);
 
   // Track JSON error events (CCR may exit 0 even on errors)
   let capturedError: string | null = null;

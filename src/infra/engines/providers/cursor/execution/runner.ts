@@ -139,6 +139,10 @@ function formatStreamJsonLine(line: string): string | null {
 export async function runCursor(options: RunCursorOptions): Promise<RunCursorResult> {
   const { prompt, workingDir, model, env, onData, onErrorData, abortSignal, timeout = 1800000 } = options;
 
+  // Reset global state to prevent data leakage between calls
+  toolNameMap.clear();
+  accumulatedThinking = '';
+
   if (!prompt) {
     throw new Error('runCursor requires a prompt.');
   }

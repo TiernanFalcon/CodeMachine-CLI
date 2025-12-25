@@ -18,6 +18,7 @@ import { CheckpointModal, LogViewer, HistoryView, StopModal, ErrorModal, Setting
 import { OpenTUIAdapter } from "./adapters/opentui"
 import { useLogStream } from "./hooks/useLogStream"
 import { useSubAgentSync } from "./hooks/useSubAgentSync"
+import { useTick } from "@tui/shared/hooks/tick"
 import { useWorkflowModals } from "./hooks/use-workflow-modals"
 import { useWorkflowKeyboard } from "./hooks/use-workflow-keyboard"
 import { calculateVisibleItems } from "./constants"
@@ -140,11 +141,15 @@ export function WorkflowShell(props: WorkflowShellProps) {
       debug('onMount - autonomousMode not enabled in config')
     }
 
-    // Load engine preset state
+    // Load engine preset and fallback state
     const engineConfig = await loadEngineConfig(cmRoot)
     if (engineConfig?.preset) {
       debug('onMount - setting engine preset to: %s', engineConfig.preset)
       ui.actions.setEnginePreset(engineConfig.preset)
+    }
+    if (engineConfig?.fallbackEnabled !== undefined) {
+      debug('onMount - setting fallbackEnabled to: %s', engineConfig.fallbackEnabled)
+      ui.actions.setFallbackEnabled(engineConfig.fallbackEnabled)
     }
 
     if (props.eventBus) {
@@ -171,28 +176,26 @@ export function WorkflowShell(props: WorkflowShellProps) {
   // Unified input waiting check
   const isWaitingForInput = () => state().inputState?.active ?? false
 
-  // Timer freeze effects
+  // Timer freeze effect - unified handler for checkpoint and input waiting states
   createEffect(() => {
     const checkpointState = state().checkpointState
-    if (checkpointState?.active && !checkpointFreezeTime()) {
+    const waitingForInput = isWaitingForInput()
+    const currentFreezeTime = checkpointFreezeTime()
+
+    // Should freeze timer when either checkpoint is active or waiting for input
+    const shouldFreeze = checkpointState?.active || waitingForInput
+
+    if (shouldFreeze && !currentFreezeTime) {
+      // Start freezing - set freeze time
       setCheckpointFreezeTime(Date.now())
-    } else if (!checkpointState?.active && checkpointFreezeTime() && !isWaitingForInput()) {
+    } else if (!shouldFreeze && currentFreezeTime) {
+      // Stop freezing - clear freeze time
       setCheckpointFreezeTime(undefined)
     }
   })
 
-  createEffect(() => {
-    if (isWaitingForInput() && !checkpointFreezeTime()) {
-      setCheckpointFreezeTime(Date.now())
-    } else if (!isWaitingForInput() && checkpointFreezeTime() && !state().checkpointState?.active) {
-      setCheckpointFreezeTime(undefined)
-    }
-  })
-
-  // Runtime tick
-  const [tick, setTick] = createSignal(0)
-  const tickInterval = setInterval(() => setTick((t) => t + 1), 1000)
-  onCleanup(() => clearInterval(tickInterval))
+  // Use shared tick for runtime updates (singleton interval across components)
+  const tick = useTick()
 
   // Current agent for output
   const currentAgent = createMemo(() => {
@@ -362,7 +365,7 @@ export function WorkflowShell(props: WorkflowShellProps) {
     ui.actions.setEnginePreset(preset)
 
     // Update runtime context for immediate effect
-    setEngineSelectionContext({ preset: preset ?? undefined })
+    setEngineSelectionContext({ preset: preset ?? undefined, fallbackEnabled: state().fallbackEnabled })
 
     // Persist to config file
     try {
@@ -380,6 +383,32 @@ export function WorkflowShell(props: WorkflowShellProps) {
     }
 
     modals.setShowSettings(false)
+  }
+
+  // Handle fallback toggle
+  const handleFallbackToggle = async (enabled: boolean) => {
+    const cmRoot = path.join(resolvePath(props.currentDir), '.codemachine')
+
+    // Update UI state
+    ui.actions.setFallbackEnabled(enabled)
+
+    // Update runtime context for immediate effect
+    setEngineSelectionContext({ preset: state().selectedEnginePreset ?? undefined, fallbackEnabled: enabled })
+
+    // Persist to config file
+    try {
+      const existingConfig = await loadEngineConfig(cmRoot)
+      await saveEngineConfig(cmRoot, { ...existingConfig, fallbackEnabled: enabled })
+      debug('[SETTINGS] Persisted fallbackEnabled: %s', enabled)
+      toast.show({
+        variant: enabled ? "success" : "warning",
+        message: enabled ? "Fallback enabled" : "Fallback disabled - will wait for rate limit reset",
+        duration: 3000
+      })
+    } catch (err) {
+      debug('[SETTINGS] Failed to persist fallbackEnabled: %s', err)
+      toast.show({ variant: "error", message: "Failed to save fallback setting", duration: 3000 })
+    }
   }
 
   const getMonitoringId = (uiAgentId: string): number | undefined => {
@@ -498,7 +527,9 @@ export function WorkflowShell(props: WorkflowShellProps) {
         <box position="absolute" left={0} top={0} width="100%" height="100%" zIndex={1000}>
           <SettingsModal
             currentPreset={state().selectedEnginePreset}
+            fallbackEnabled={state().fallbackEnabled}
             onSelect={handlePresetSelect}
+            onFallbackToggle={handleFallbackToggle}
             onClose={() => modals.setShowSettings(false)}
           />
         </box>

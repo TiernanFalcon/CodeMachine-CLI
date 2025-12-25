@@ -115,34 +115,39 @@ export class AgentRepository {
       values.push(updates.sessionId);
     }
 
-    if (fields.length > 0) {
-      fields.push('updated_at = CURRENT_TIMESTAMP');
-      values.push(id);
+    // Wrap both agents and telemetry updates in a transaction for atomicity
+    const updateTransaction = this.db.transaction(() => {
+      if (fields.length > 0) {
+        fields.push('updated_at = CURRENT_TIMESTAMP');
+        values.push(id);
 
-      this.db.prepare(`UPDATE agents SET ${fields.join(', ')} WHERE id = ?`).run(...values);
-    }
+        this.db.prepare(`UPDATE agents SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+      }
 
-    if (updates.telemetry) {
-      this.db.prepare(`
-        INSERT INTO telemetry (agent_id, tokens_in, tokens_out, cached_tokens, cost, cache_creation_tokens, cache_read_tokens)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(agent_id) DO UPDATE SET
-          tokens_in = excluded.tokens_in,
-          tokens_out = excluded.tokens_out,
-          cached_tokens = excluded.cached_tokens,
-          cost = excluded.cost,
-          cache_creation_tokens = excluded.cache_creation_tokens,
-          cache_read_tokens = excluded.cache_read_tokens
-      `).run(
-        id,
-        updates.telemetry.tokensIn ?? 0,
-        updates.telemetry.tokensOut ?? 0,
-        updates.telemetry.cached ?? 0,
-        updates.telemetry.cost ?? null,
-        updates.telemetry.cacheCreationTokens ?? null,
-        updates.telemetry.cacheReadTokens ?? null
-      );
-    }
+      if (updates.telemetry) {
+        this.db.prepare(`
+          INSERT INTO telemetry (agent_id, tokens_in, tokens_out, cached_tokens, cost, cache_creation_tokens, cache_read_tokens)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(agent_id) DO UPDATE SET
+            tokens_in = excluded.tokens_in,
+            tokens_out = excluded.tokens_out,
+            cached_tokens = excluded.cached_tokens,
+            cost = excluded.cost,
+            cache_creation_tokens = excluded.cache_creation_tokens,
+            cache_read_tokens = excluded.cache_read_tokens
+        `).run(
+          id,
+          updates.telemetry.tokensIn ?? 0,
+          updates.telemetry.tokensOut ?? 0,
+          updates.telemetry.cached ?? 0,
+          updates.telemetry.cost ?? null,
+          updates.telemetry.cacheCreationTokens ?? null,
+          updates.telemetry.cacheReadTokens ?? null
+        );
+      }
+    });
+
+    updateTransaction();
   }
 
   delete(id: number): void {

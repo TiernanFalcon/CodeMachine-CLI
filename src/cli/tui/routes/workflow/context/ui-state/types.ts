@@ -53,6 +53,7 @@ export type UIActions = {
   logMessage(agentId: string, message: string): void
   setAutonomousMode(enabled: boolean): void
   setEnginePreset(preset: string | null): void
+  setFallbackEnabled(enabled: boolean): void
 }
 
 export type { WorkflowState, AgentStatus, LoopState, ChainedState, InputState, RateLimitState, SubAgentState, TriggeredAgentState, WorkflowStatus }

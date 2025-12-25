@@ -77,6 +77,8 @@ export interface EngineConfigFile {
   presets?: Record<string, EnginePresetConfig>;
   /** Direct per-agent overrides (merged with preset) */
   overrides?: Record<string, string>;
+  /** Whether to enable fallback to other engines on rate limit (default: true) */
+  fallbackEnabled?: boolean;
 }
 
 /**
@@ -128,6 +130,8 @@ export interface EngineSelectionContext {
   globalEngine?: string;
   /** Per-agent overrides */
   agentOverrides?: Record<string, string>;
+  /** Whether to enable fallback to other engines on rate limit (default: true) */
+  fallbackEnabled?: boolean;
 }
 
 // Module-level selection context (set at workflow start)
@@ -411,4 +415,37 @@ export function describeAvailablePresets(configFile: EngineConfigFile | null): s
   }
 
   return lines.join('\n');
+}
+
+/**
+ * Check if fallback is enabled based on context and config
+ *
+ * Priority order (highest to lowest):
+ * 1. Runtime context (set via TUI or CLI)
+ * 2. Config file setting
+ * 3. Default (true - fallback enabled)
+ */
+export function isFallbackEnabled(
+  context: EngineSelectionContext | null,
+  configFile: EngineConfigFile | null
+): boolean {
+  // Runtime context takes precedence
+  if (context?.fallbackEnabled !== undefined) {
+    return context.fallbackEnabled;
+  }
+
+  // Config file setting
+  if (configFile?.fallbackEnabled !== undefined) {
+    return configFile.fallbackEnabled;
+  }
+
+  // Default: fallback is enabled
+  return true;
+}
+
+/**
+ * Get current fallback enabled status from module-level context
+ */
+export function getCurrentFallbackEnabled(): boolean {
+  return isFallbackEnabled(currentSelectionContext, null);
 }

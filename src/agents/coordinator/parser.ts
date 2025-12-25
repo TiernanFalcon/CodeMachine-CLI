@@ -312,9 +312,47 @@ export class CoordinatorParser {
   }
 
   /**
+   * Check if a character position is a quote boundary
+   * Returns 'open', 'close', or null
+   */
+  private checkQuoteBoundary(
+    str: string,
+    i: number,
+    char: string,
+    inQuotes: boolean,
+    quoteChar: string,
+    extraDelimiters: string[] = []
+  ): { type: 'open' | 'close'; quoteChar: string } | null {
+    // Not a quote character or escaped
+    if ((char !== '"' && char !== "'") || (i > 0 && str[i - 1] === '\\')) {
+      return null;
+    }
+
+    const prevChar = i > 0 ? str[i - 1] : '';
+    const nextChar = i < str.length - 1 ? str[i + 1] : '';
+
+    if (!inQuotes) {
+      // Check if this looks like an opening quote
+      const isOpening = i === 0 || prevChar === ' ' || prevChar === '\t' ||
+        extraDelimiters.some(d => prevChar === d);
+      if (isOpening) {
+        return { type: 'open', quoteChar: char };
+      }
+    } else if (char === quoteChar) {
+      // Check if this looks like a closing quote
+      const isClosing = i === str.length - 1 || nextChar === ' ' || nextChar === '\t' ||
+        extraDelimiters.some(d => nextChar === d);
+      if (isClosing) {
+        return { type: 'close', quoteChar: '' };
+      }
+    }
+
+    return null;
+  }
+
+  /**
    * Smart split that respects quotes
    * Splits by delimiter but keeps quoted strings intact
-   * Distinguishes between apostrophes and quote delimiters
    */
   private smartSplit(str: string, delimiter: string): string[] {
     const result: string[] = [];
@@ -324,31 +362,13 @@ export class CoordinatorParser {
 
     for (let i = 0; i < str.length; i++) {
       const char = str[i];
+      const boundary = this.checkQuoteBoundary(str, i, char, inQuotes, quoteChar, [delimiter]);
 
-      // Check if this is a quote character
-      if ((char === '"' || char === "'") && (i === 0 || str[i - 1] !== '\\')) {
-        if (!inQuotes) {
-          // Check if this looks like an opening quote (preceded by space/start/delimiter)
-          const prevChar = i > 0 ? str[i - 1] : '';
-          const isOpening = i === 0 || prevChar === ' ' || prevChar === delimiter || prevChar === '\t';
-
-          if (isOpening) {
-            inQuotes = true;
-            quoteChar = char;
-          }
-        } else if (char === quoteChar) {
-          // Check if this looks like a closing quote (followed by space/end/delimiter)
-          const nextChar = i < str.length - 1 ? str[i + 1] : '';
-          const isClosing = i === str.length - 1 || nextChar === ' ' || nextChar === delimiter || nextChar === '\t';
-
-          if (isClosing) {
-            inQuotes = false;
-            quoteChar = '';
-          }
-        }
+      if (boundary) {
+        inQuotes = boundary.type === 'open';
+        quoteChar = boundary.quoteChar;
       }
 
-      // Check for delimiter
       if (char === delimiter && !inQuotes) {
         result.push(current);
         current = '';
@@ -357,7 +377,6 @@ export class CoordinatorParser {
       }
     }
 
-    // Add last part
     if (current) {
       result.push(current);
     }
@@ -367,7 +386,6 @@ export class CoordinatorParser {
 
   /**
    * Smart split for multi-character delimiters that respects quotes
-   * Distinguishes between apostrophes and quote delimiters
    */
   private smartSplitMultiChar(str: string, delimiter: string): string[] {
     const result: string[] = [];
@@ -377,41 +395,22 @@ export class CoordinatorParser {
 
     for (let i = 0; i < str.length; i++) {
       const char = str[i];
+      const boundary = this.checkQuoteBoundary(str, i, char, inQuotes, quoteChar);
 
-      // Check if this is a quote character
-      if ((char === '"' || char === "'") && (i === 0 || str[i - 1] !== '\\')) {
-        if (!inQuotes) {
-          // Check if this looks like an opening quote (preceded by space/start)
-          const prevChar = i > 0 ? str[i - 1] : '';
-          const isOpening = i === 0 || prevChar === ' ' || prevChar === '\t';
-
-          if (isOpening) {
-            inQuotes = true;
-            quoteChar = char;
-          }
-        } else if (char === quoteChar) {
-          // Check if this looks like a closing quote (followed by space/end)
-          const nextChar = i < str.length - 1 ? str[i + 1] : '';
-          const isClosing = i === str.length - 1 || nextChar === ' ' || nextChar === '\t';
-
-          if (isClosing) {
-            inQuotes = false;
-            quoteChar = '';
-          }
-        }
+      if (boundary) {
+        inQuotes = boundary.type === 'open';
+        quoteChar = boundary.quoteChar;
       }
 
-      // Check for multi-char delimiter
       if (!inQuotes && str.substring(i, i + delimiter.length) === delimiter) {
         result.push(current);
         current = '';
-        i += delimiter.length - 1; // Skip the delimiter chars (minus 1 because loop will increment)
+        i += delimiter.length - 1;
       } else {
         current += char;
       }
     }
 
-    // Add last part
     if (current) {
       result.push(current);
     }
@@ -421,7 +420,6 @@ export class CoordinatorParser {
 
   /**
    * Check if a string contains a character outside of quotes
-   * Distinguishes between apostrophes and quote delimiters
    */
   private containsOutsideQuotes(str: string, searchChar: string): boolean {
     let inQuotes = false;
@@ -429,31 +427,13 @@ export class CoordinatorParser {
 
     for (let i = 0; i < str.length; i++) {
       const char = str[i];
+      const boundary = this.checkQuoteBoundary(str, i, char, inQuotes, quoteChar);
 
-      // Check if this is a quote character
-      if ((char === '"' || char === "'") && (i === 0 || str[i - 1] !== '\\')) {
-        if (!inQuotes) {
-          // Check if this looks like an opening quote (preceded by space/start)
-          const prevChar = i > 0 ? str[i - 1] : '';
-          const isOpening = i === 0 || prevChar === ' ' || prevChar === '\t';
-
-          if (isOpening) {
-            inQuotes = true;
-            quoteChar = char;
-          }
-        } else if (char === quoteChar) {
-          // Check if this looks like a closing quote (followed by space/end)
-          const nextChar = i < str.length - 1 ? str[i + 1] : '';
-          const isClosing = i === str.length - 1 || nextChar === ' ' || nextChar === '\t';
-
-          if (isClosing) {
-            inQuotes = false;
-            quoteChar = '';
-          }
-        }
+      if (boundary) {
+        inQuotes = boundary.type === 'open';
+        quoteChar = boundary.quoteChar;
       }
 
-      // Check if we found the search character outside quotes
       if (char === searchChar && !inQuotes) {
         return true;
       }

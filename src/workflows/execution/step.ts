@@ -84,14 +84,38 @@ export async function executeStep(
 
   let rawPrompt: string;
   try {
-    const parts = await Promise.all(
+    const results = await Promise.allSettled(
       resolvedPromptPaths.map(async promptPath => {
         const content = await readFile(promptPath, 'utf8');
         debug(`[DEBUG step] Prompt loaded from ${promptPath}, length=${content.length}`);
         return content;
       }),
     );
-    rawPrompt = parts.join('\n\n');
+
+    // Separate successful and failed results
+    const successfulParts: string[] = [];
+    const failedPaths: string[] = [];
+
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled') {
+        successfulParts.push(result.value);
+      } else {
+        failedPaths.push(resolvedPromptPaths[index]);
+        debug(`[DEBUG step] Failed to read prompt file ${resolvedPromptPaths[index]}: ${result.reason}`);
+      }
+    });
+
+    // If all files failed, throw error
+    if (successfulParts.length === 0) {
+      throw new Error(`Failed to read any prompt files: ${failedPaths.join(', ')}`);
+    }
+
+    // Log warning if some files failed
+    if (failedPaths.length > 0) {
+      debug(`[DEBUG step] WARNING: ${failedPaths.length} prompt file(s) could not be read: ${failedPaths.join(', ')}`);
+    }
+
+    rawPrompt = successfulParts.join('\n\n');
     debug(`[DEBUG step] Combined prompt length=${rawPrompt.length}`);
   } catch (fileError) {
     debug(`[DEBUG step] ERROR reading prompt file: ${fileError instanceof Error ? fileError.message : String(fileError)}`);

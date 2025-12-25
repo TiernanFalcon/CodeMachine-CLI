@@ -69,25 +69,38 @@ export function createMachine(config: MachineConfig): StateMachine {
 
     debug('[FSM] Transition: %s -> %s (event: %s)', prevState, nextState, event.type);
 
-    // Exit current state
     const prevStateDef = config.states[prevState];
-    if (prevStateDef.onExit) {
-      prevStateDef.onExit(context);
-    }
-
-    // Execute transition action
-    if (transition.action) {
-      transition.action(context, event);
-    }
-
-    // Enter new state
-    currentState = nextState;
     const nextStateDef = config.states[nextState];
-    if (nextStateDef.onEnter) {
-      nextStateDef.onEnter(context);
-    }
 
-    notify();
+    try {
+      // Exit current state
+      if (prevStateDef.onExit) {
+        prevStateDef.onExit(context);
+      }
+
+      // Execute transition action
+      if (transition.action) {
+        transition.action(context, event);
+      }
+
+      // Enter new state (commit state change)
+      currentState = nextState;
+
+      // Run onEnter (state already committed, so errors are logged but don't prevent transition)
+      if (nextStateDef.onEnter) {
+        try {
+          nextStateDef.onEnter(context);
+        } catch (enterError) {
+          debug('[FSM] Error in onEnter for state %s: %o', nextState, enterError);
+        }
+      }
+
+      notify();
+    } catch (transitionError) {
+      // Transition failed before state change - log and keep current state
+      debug('[FSM] Transition failed from %s to %s: %o', prevState, nextState, transitionError);
+      // State remains unchanged (prevState)
+    }
   }
 
   function subscribe(listener: StateListener): () => void {
