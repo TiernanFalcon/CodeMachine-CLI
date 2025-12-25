@@ -30,7 +30,7 @@ This document tracks planned improvements, enhancements, and technical debt item
 
 | Priority | Item | Description | Status |
 |----------|------|-------------|--------|
-| High | **Log Rotation** | Add log file size limits and automatic rotation in `src/agents/monitoring/logger.ts` | Open |
+| High | **Log Rotation** | Add log file size limits and automatic rotation in `src/agents/monitoring/logger.ts` | ✅ Done |
 | Medium | **Resume Support** | Implement consistent resume capability across all providers | Open |
 | Medium | **Streaming Improvements** | Better progress indicators during long operations | Open |
 | Low | **Accessibility** | Add ARIA labels for TUI components | Open |
@@ -84,12 +84,12 @@ This document tracks planned improvements, enhancements, and technical debt item
 |----------|------|--------|-----|-------|
 | Code Quality | 2 | 1 | 1 | 4 |
 | Testing | 2 | 2 | 0 | 4 |
-| Features | 1 | 2 | 1 | 4 |
+| Features | 0 | 2 | 1 | 3 |
 | Architecture | 0 | 3 | 1 | 4 |
 | Documentation | 0 | 2 | 1 | 3 |
 | Performance | 0 | 2 | 1 | 3 |
 | DevOps | 0 | 2 | 1 | 3 |
-| **Total** | **5** | **14** | **6** | **25** |
+| **Total** | **4** | **14** | **6** | **24** |
 
 ---
 
@@ -97,4 +97,5 @@ This document tracks planned improvements, enhancements, and technical debt item
 
 | Date | Item | Change |
 |------|------|--------|
+| 2025-12-25 | Log Rotation | Implemented size-based log rotation (10MB limit, 5 backups) |
 | 2025-12-25 | Initial | Created roadmap document |
