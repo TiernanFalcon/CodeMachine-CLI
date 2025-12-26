@@ -1,5 +1,6 @@
 import type { Database } from 'bun:sqlite';
 import type { AgentRecord, RegisterAgentInput } from '../types.js';
+import { withDatabaseRetrySync } from '../../../shared/utils/retry.js';
 type AgentRow = {
   id: number;
   name: string;
@@ -33,23 +34,25 @@ export class AgentRepository {
       ? `${input.prompt.substring(0, 500)}...`
       : input.prompt;
 
-    const result = this.db.prepare(`
-      INSERT INTO agents (name, prompt, parent_id, engine, status, start_time, log_path, pid, engine_provider, model_name)
-      VALUES (?, ?, ?, ?, 'running', ?, ?, ?, ?, ?)
-      RETURNING id
-    `).get(
-      input.name,
-      trimmedPrompt,
-      input.parentId ?? null,
-      input.engine ?? null,
-      startTime,
-      logPath,
-      input.pid ?? null, // null = no PID tracking (in-process agents share parent PID)
-      input.engineProvider ?? null,
-      input.modelName ?? null
-    ) as { id: number };
+    return withDatabaseRetrySync(() => {
+      const result = this.db.prepare(`
+        INSERT INTO agents (name, prompt, parent_id, engine, status, start_time, log_path, pid, engine_provider, model_name)
+        VALUES (?, ?, ?, ?, 'running', ?, ?, ?, ?, ?)
+        RETURNING id
+      `).get(
+        input.name,
+        trimmedPrompt,
+        input.parentId ?? null,
+        input.engine ?? null,
+        startTime,
+        logPath,
+        input.pid ?? null, // null = no PID tracking (in-process agents share parent PID)
+        input.engineProvider ?? null,
+        input.modelName ?? null
+      ) as { id: number };
 
-    return result.id;
+      return result.id;
+    });
   }
 
   get(id: number): AgentRecord | undefined {
@@ -116,6 +119,7 @@ export class AgentRepository {
     }
 
     // Wrap both agents and telemetry updates in a transaction for atomicity
+    // Use retry logic to handle SQLITE_BUSY under concurrent access
     const updateTransaction = this.db.transaction(() => {
       if (fields.length > 0) {
         fields.push('updated_at = CURRENT_TIMESTAMP');
@@ -147,18 +151,25 @@ export class AgentRepository {
       }
     });
 
-    updateTransaction();
+    withDatabaseRetrySync(() => updateTransaction());
   }
 
   delete(id: number): void {
-    this.db.prepare('DELETE FROM agents WHERE id = ?').run(id);
+    withDatabaseRetrySync(() => {
+      this.db.prepare('DELETE FROM agents WHERE id = ?').run(id);
+    });
   }
 
   clearAll(): number {
     // Delete telemetry first due to foreign key
-    this.db.prepare('DELETE FROM telemetry').run();
-    const result = this.db.prepare('DELETE FROM agents').run();
-    return result.changes;
+    // Use retry logic and wrap in transaction for atomicity
+    return withDatabaseRetrySync(() => {
+      const clearTransaction = this.db.transaction(() => {
+        this.db.prepare('DELETE FROM telemetry').run();
+        return this.db.prepare('DELETE FROM agents').run().changes;
+      });
+      return clearTransaction();
+    });
   }
 
   getFullSubtree(agentId: number): AgentRecord[] {
