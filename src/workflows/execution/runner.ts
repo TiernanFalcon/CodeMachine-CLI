@@ -350,7 +350,7 @@ export class WorkflowRunner {
     this.emitter.updateAgentEngine(uniqueAgentId, engineType);
 
     // Resolve model: preset > step.model > engine default
-    const engineModule = registry.get(engineType);
+    const engineModule = await registry.getAsync(engineType);
     const presetModel = getPresetModel(step.agentId);
     const resolvedModel = presetModel ?? step.model ?? engineModule?.metadata.defaultModel;
     if (resolvedModel) {

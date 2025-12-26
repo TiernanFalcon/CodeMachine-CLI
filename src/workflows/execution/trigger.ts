@@ -40,8 +40,8 @@ export async function executeTriggerAgent(options: TriggerExecutionOptions): Pro
     const triggeredAgentTemplate = await processPromptString(rawTemplate, cwd);
 
     // Get engine and resolve model/reasoning
-    const engine = getEngine(engineType);
-    const engineModule = registry.get(engineType);
+    const engine = await getEngine(engineType);
+    const engineModule = await registry.getAsync(engineType);
     const triggeredModel = (triggeredAgentConfig.model as string | undefined) ?? engineModule?.metadata.defaultModel;
     const triggeredReasoning = (triggeredAgentConfig.modelReasoningEffort as 'low' | 'medium' | 'high' | undefined) ?? engineModule?.metadata.defaultModelReasoningEffort;
 

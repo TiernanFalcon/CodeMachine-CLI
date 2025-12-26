@@ -199,7 +199,7 @@ export function getAvailableEngineIds(): string[] {
  * Validate that an engine ID exists in the registry
  */
 export function isValidEngineId(engineId: string): boolean {
-  return registry.get(engineId) !== undefined;
+  return registry.has(engineId);
 }
 
 /**

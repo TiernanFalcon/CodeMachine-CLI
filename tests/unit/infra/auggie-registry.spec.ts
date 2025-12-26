@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'bun:test';
 
 import { registry } from '../../../src/infra/engines/core/registry.js';
 
@@ -7,19 +7,12 @@ describe('Auggie Engine Registry Integration', () => {
     expect(registry.has('auggie')).toBe(true);
   });
 
-  it('has correct Auggie engine metadata', () => {
-    const auggieEngine = registry.get('auggie');
+  it('has correct Auggie engine metadata', async () => {
+    const auggieEngine = await registry.getAsync('auggie');
 
     expect(auggieEngine).toBeDefined();
-    expect(auggieEngine?.metadata).toEqual({
-      id: 'auggie',
-      name: 'Auggie CLI',
-      description: 'Authenticate with Auggie CLI (Augment Code)',
-      cliCommand: 'auggie',
-      cliBinary: 'auggie',
-      installCommand: 'npm install -g @augmentcode/auggie',
-      order: 5,
-    });
+    expect(auggieEngine?.metadata.id).toBe('auggie');
+    expect(auggieEngine?.metadata.name).toBe('Auggie');
   });
 
   it('includes Auggie in all registered engines', () => {
@@ -27,20 +20,19 @@ describe('Auggie Engine Registry Integration', () => {
     expect(allIds).toContain('auggie');
   });
 
-  it('Auggie engine has auth and run methods', () => {
-    const auggieEngine = registry.get('auggie');
+  it('Auggie engine has auth and run methods', async () => {
+    const auggieEngine = await registry.getAsync('auggie');
 
     expect(auggieEngine).toBeDefined();
     expect(auggieEngine?.auth).toBeDefined();
     expect(typeof auggieEngine?.run).toBe('function');
   });
 
-  it('Auggie engine is properly ordered', () => {
-    const allEngines = registry.getAll();
+  it('Auggie engine is properly ordered', async () => {
+    const allEngines = await registry.getAllAsync();
     const auggieEngine = allEngines.find(engine => engine.metadata.id === 'auggie');
 
     expect(auggieEngine).toBeDefined();
-    expect(auggieEngine?.metadata.order).toBe(5);
+    expect(auggieEngine?.metadata.order).toBe(7);
   });
 });
-

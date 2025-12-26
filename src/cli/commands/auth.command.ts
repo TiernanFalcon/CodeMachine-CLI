@@ -13,7 +13,8 @@ interface AuthProviderChoice extends SelectionChoice<string> {
 }
 
 export async function selectAuthProvider(): Promise<string | undefined> {
-  const choices: AuthProviderChoice[] = registry.getAll().map(engine => ({
+  const engines = await registry.getAllAsync();
+  const choices: AuthProviderChoice[] = engines.map(engine => ({
     title: engine.metadata.name,
     value: engine.metadata.id,
     description: engine.metadata.description
@@ -27,7 +28,7 @@ export async function selectAuthProvider(): Promise<string | undefined> {
 }
 
 export async function handleLogin(providerId: string): Promise<void> {
-  const engine = registry.get(providerId);
+  const engine = await registry.getAsync(providerId);
   if (!engine) {
     throw new Error(`Unknown provider: ${providerId}`);
   }
@@ -120,7 +121,7 @@ export async function handleLogin(providerId: string): Promise<void> {
 }
 
 export async function handleLogout(providerId: string): Promise<void> {
-  const engine = registry.get(providerId);
+  const engine = await registry.getAsync(providerId);
   if (!engine) {
     throw new Error(`Unknown provider: ${providerId}`);
   }

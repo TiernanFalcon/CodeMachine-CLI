@@ -87,7 +87,7 @@ async function resolveEngine(
     engineType = agentConfig.engine;
   } else {
     // Fallback: find first authenticated engine by order (WITH CACHING)
-    const engines = registry.getAll();
+    const engines = await registry.getAllAsync();
     let foundEngine = null;
 
     for (const engine of engines) {
@@ -102,7 +102,7 @@ async function resolveEngine(
     }
 
     if (!foundEngine) {
-      foundEngine = registry.getDefault();
+      foundEngine = await registry.getDefaultAsync();
     }
 
     if (!foundEngine) {
@@ -116,7 +116,7 @@ async function resolveEngine(
   // Ensure authentication
   await ensureEngineAuth(engineType);
 
-  const engineModule = registry.get(engineType);
+  const engineModule = await registry.getAsync(engineType);
   if (!engineModule) {
     throw new Error(`Engine not found: ${engineType}`);
   }
@@ -336,7 +336,7 @@ export interface ExecuteAgentOptions {
  */
 async function ensureEngineAuth(engineType: EngineType): Promise<void> {
   const { registry } = await import('../../infra/engines/index.js');
-  const engine = registry.get(engineType);
+  const engine = await registry.getAsync(engineType);
 
   if (!engine) {
     const availableEngines = registry.getAllIds().join(', ');
@@ -428,9 +428,9 @@ export async function executeAgent(
   const adapter = new MemoryAdapter(memoryDir);
   const store = new MemoryStore(adapter);
 
-  // Get engine and execute
+  // Get engine and execute (async for lazy loading)
   // NOTE: Prompt is already complete - no template loading or building here
-  const engine = getEngine(engineType);
+  const engine = await getEngine(engineType);
   debug(`[AgentRunner] Starting engine execution: engine=%s model=%s resumeSessionId=%s`,
     engineType, model, resumeSessionId ?? '(new session)');
 

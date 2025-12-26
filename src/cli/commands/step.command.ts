@@ -27,7 +27,7 @@ type StepCommandOptions = {
  */
 async function ensureEngineAuth(engineType: EngineType): Promise<void> {
   const { registry } = await import('../../infra/engines/index.js');
-  const engine = registry.get(engineType);
+  const engine = await registry.getAsync(engineType);
 
   if (!engine) {
     const availableEngines = registry.getAllIds().join(', ');
@@ -76,7 +76,7 @@ async function executeStep(
     engineType = agentConfig.engine;
   } else {
     // Fallback: find first authenticated engine by order
-    const engines = registry.getAll();
+    const engines = await registry.getAllAsync();
     let foundEngine = null;
 
     for (const engine of engines) {
@@ -89,7 +89,7 @@ async function executeStep(
 
     if (!foundEngine) {
       // If no authenticated engine, use default (first by order)
-      foundEngine = registry.getDefault();
+      foundEngine = await registry.getDefaultAsync();
     }
 
     if (!foundEngine) {
@@ -104,7 +104,7 @@ async function executeStep(
   await ensureEngineAuth(engineType);
 
   // Get engine module for defaults
-  const engineModule = registry.get(engineType);
+  const engineModule = await registry.getAsync(engineType);
   if (!engineModule) {
     throw new Error(`Engine not found: ${engineType}`);
   }
@@ -128,8 +128,8 @@ async function executeStep(
     compositePrompt = agentTemplate;
   }
 
-  // Get engine and execute
-  const engine = getEngine(engineType);
+  // Get engine and execute (async for lazy loading)
+  const engine = await getEngine(engineType);
 
   console.log('═'.repeat(80));
   console.log(formatAgentLog(agentId, `${agentConfig.name} started to work.`));

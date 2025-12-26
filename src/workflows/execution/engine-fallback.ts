@@ -105,7 +105,7 @@ export async function runWithFallback(
     }
 
     // Check if engine is authenticated
-    const engine = registry.get(currentEngine);
+    const engine = await registry.getAsync(currentEngine);
     if (!engine) {
       debug('[EngineFallback] Engine %s not found, skipping', currentEngine);
       engineIndex++;
@@ -235,7 +235,7 @@ function findSoonestReset(
 export async function hasAvailableEngine(
   rateLimitManager: RateLimitManager
 ): Promise<boolean> {
-  const engines = registry.getAll();
+  const engines = await registry.getAllAsync();
 
   for (const engine of engines) {
     const engineId = engine.metadata.id;
