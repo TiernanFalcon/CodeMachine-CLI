@@ -1,5 +1,6 @@
 import { AgentMonitorService } from './monitor.js';
 import { AgentLoggerService } from './logger.js';
+import { closeDB } from './db/connection.js';
 import * as logger from '../../shared/logging/logger.js';
 import { killAllActiveProcesses } from '../../infra/process/spawn.js';
 
@@ -87,6 +88,14 @@ export class MonitoringCleanup {
       logger.error('Unhandled rejection:', error);
       await this.cleanup('failed', error);
       process.exit(1);
+    });
+
+    // Handle normal exit (cleanup resources before exit)
+    process.on('beforeExit', async () => {
+      if (!this.isCleaningUp) {
+        logger.debug('Process exiting normally, closing resources...');
+        closeDB();
+      }
     });
 
     logger.debug('MonitoringCleanup signal handlers initialized');
@@ -205,9 +214,13 @@ export class MonitoringCleanup {
 
         // Release any remaining locks
         await loggerService.releaseAllLocks();
-
-        logger.debug('Cleanup complete');
       }
+
+      // Close database connection
+      logger.debug('Closing database connection...');
+      closeDB();
+
+      logger.debug('Cleanup complete');
     } catch (error) {
       logger.error('Error during cleanup:', error);
     } finally {
