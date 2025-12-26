@@ -64,7 +64,7 @@ async function initializeInBackground(cwd: string): Promise<void> {
 
   // Lazy load and initialize engine registry
   const { registry } = await import('../infra/engines/index.js');
-  const engines = registry.getAll();
+  const engines = await registry.getAllAsync();
 
   // Sync engine configs in background
   for (const engine of engines) {

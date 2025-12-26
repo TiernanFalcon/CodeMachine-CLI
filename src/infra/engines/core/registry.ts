@@ -1,59 +1,90 @@
 /**
  * Engine Registry - Auto-discovers and manages engine plugins
+ *
+ * Uses lazy loading to improve startup time - engines are only
+ * fully loaded when actually accessed.
  */
 
 import type { EngineModule, EngineMetadata } from './base.js';
 import { isEngineModule } from './base.js';
 
-// Import all engines at compile time
-import geminiEngine from '../providers/gemini/index.js';
-import codexEngine from '../providers/codex/index.js';
-import claudeEngine from '../providers/claude/index.js';
-import cursorEngine from '../providers/cursor/index.js';
-import ccrEngine from '../providers/ccr/index.js';
-import opencodeEngine from '../providers/opencode/index.js';
-import auggieEngine from '../providers/auggie/index.js';
-import mockEngine from '../providers/mock/index.js';
+/**
+ * Engine loader function - returns a promise that resolves to an engine module
+ */
+type EngineLoader = () => Promise<EngineModule>;
+
+/**
+ * Lazy engine entry - stores loader and cached module
+ */
+interface LazyEngine {
+  metadata: EngineMetadata;
+  loader: EngineLoader;
+  module?: EngineModule;
+  loading?: Promise<EngineModule>;
+}
+
+/**
+ * Engine metadata for lazy registration
+ * Allows showing engine info without loading the full module
+ */
+const ENGINE_METADATA: EngineMetadata[] = [
+  { id: 'gemini', name: 'Gemini', order: 1, defaultModel: 'gemini-2.0-flash' },
+  { id: 'codex', name: 'Codex', order: 2, defaultModel: 'codex' },
+  { id: 'claude', name: 'Claude', order: 3, defaultModel: 'claude-sonnet-4-20250514' },
+  { id: 'cursor', name: 'Cursor', order: 4, defaultModel: 'claude-sonnet' },
+  { id: 'ccr', name: 'Claude Code Runner', order: 5, defaultModel: 'claude-sonnet-4-20250514' },
+  { id: 'opencode', name: 'OpenCode', order: 6, defaultModel: 'anthropic/claude-sonnet-4-20250514' },
+  { id: 'auggie', name: 'Auggie', order: 7, defaultModel: 'anthropic/claude-sonnet-4-20250514' },
+];
+
+/**
+ * Dynamic import loaders for each engine
+ * These are only called when the engine is actually needed
+ */
+const ENGINE_LOADERS: Record<string, EngineLoader> = {
+  gemini: async () => (await import('../providers/gemini/index.js')).default,
+  codex: async () => (await import('../providers/codex/index.js')).default,
+  claude: async () => (await import('../providers/claude/index.js')).default,
+  cursor: async () => (await import('../providers/cursor/index.js')).default,
+  ccr: async () => (await import('../providers/ccr/index.js')).default,
+  opencode: async () => (await import('../providers/opencode/index.js')).default,
+  auggie: async () => (await import('../providers/auggie/index.js')).default,
+  mock: async () => (await import('../providers/mock/index.js')).default,
+};
 
 /**
  * Engine Registry - Singleton that manages all available engines
+ * Uses lazy loading for improved startup performance
  */
 class EngineRegistry {
-  private engines = new Map<string, EngineModule>();
+  private engines = new Map<string, LazyEngine>();
   private initialized = false;
 
   /**
-   * Initialize and register all available engines
-   * This happens at module load time
+   * Initialize registry with lazy engine entries
+   * Does NOT load engine modules - just registers metadata
    */
   async initialize(): Promise<void> {
     if (this.initialized) {
-      return; // Already initialized
+      return;
     }
 
-    // Register all known engines
-    // To add a new engine: import it above and register it here
-    const engineModules = [
-      geminiEngine,
-      codexEngine,
-      claudeEngine,
-      cursorEngine,
-      ccrEngine,
-      opencodeEngine,
-      auggieEngine,
-      // Mock engine is only registered in test mode
-      ...(process.env.CODEMACHINE_ENABLE_MOCK_ENGINE === '1' ? [mockEngine] : []),
-    ];
+    // Register all engines with their metadata and loaders
+    for (const metadata of ENGINE_METADATA) {
+      const loader = ENGINE_LOADERS[metadata.id];
+      if (loader) {
+        this.engines.set(metadata.id, { metadata, loader });
+      }
+    }
 
-    for (const engineModule of engineModules) {
-      try {
-        if (isEngineModule(engineModule)) {
-          this.register(engineModule);
-        } else {
-          console.warn('Invalid engine module:', engineModule);
-        }
-      } catch (error) {
-        console.warn('Failed to register engine:', error instanceof Error ? error.message : String(error));
+    // Mock engine only in test mode
+    if (process.env.CODEMACHINE_ENABLE_MOCK_ENGINE === '1') {
+      const mockLoader = ENGINE_LOADERS['mock'];
+      if (mockLoader) {
+        this.engines.set('mock', {
+          metadata: { id: 'mock', name: 'Mock', order: 99 },
+          loader: mockLoader,
+        });
       }
     }
 
@@ -61,7 +92,46 @@ class EngineRegistry {
   }
 
   /**
-   * Manually register an engine
+   * Load an engine module (lazy loading with caching)
+   */
+  private async loadEngine(entry: LazyEngine): Promise<EngineModule> {
+    // Already loaded
+    if (entry.module) {
+      return entry.module;
+    }
+
+    // Currently loading - wait for it
+    if (entry.loading) {
+      return entry.loading;
+    }
+
+    // Start loading
+    entry.loading = (async () => {
+      const module = await entry.loader();
+
+      if (!isEngineModule(module)) {
+        throw new Error(`Invalid engine module for ${entry.metadata.id}`);
+      }
+
+      // Update metadata from actual module (in case it differs)
+      entry.metadata = module.metadata;
+      entry.module = module;
+
+      // Call onRegister hook
+      module.onRegister?.();
+
+      return module;
+    })();
+
+    try {
+      return await entry.loading;
+    } finally {
+      entry.loading = undefined;
+    }
+  }
+
+  /**
+   * Manually register an engine (for testing or dynamic registration)
    */
   register(engine: EngineModule): void {
     const id = engine.metadata.id;
@@ -71,53 +141,123 @@ class EngineRegistry {
       return;
     }
 
-    this.engines.set(id, engine);
+    this.engines.set(id, {
+      metadata: engine.metadata,
+      loader: async () => engine,
+      module: engine,
+    });
 
-    // Call onRegister hook if provided
     engine.onRegister?.();
   }
 
   /**
-   * Get an engine by ID
+   * Get an engine by ID (loads if not already loaded)
    */
   get(id: string): EngineModule | undefined {
-    return this.engines.get(id);
+    const entry = this.engines.get(id);
+    if (!entry) {
+      return undefined;
+    }
+
+    // If already loaded, return immediately
+    if (entry.module) {
+      return entry.module;
+    }
+
+    // For sync access, we can't load - return undefined
+    // Caller should use getAsync() for lazy loading
+    return undefined;
   }
 
   /**
-   * Get all registered engines, sorted by order
+   * Get an engine by ID with async loading
+   */
+  async getAsync(id: string): Promise<EngineModule | undefined> {
+    const entry = this.engines.get(id);
+    if (!entry) {
+      return undefined;
+    }
+
+    return this.loadEngine(entry);
+  }
+
+  /**
+   * Get all registered engines (loads all - use sparingly)
    */
   getAll(): EngineModule[] {
-    return Array.from(this.engines.values())
-      .sort((a, b) => (a.metadata.order ?? 99) - (b.metadata.order ?? 99));
+    const loaded: EngineModule[] = [];
+
+    for (const entry of this.engines.values()) {
+      if (entry.module) {
+        loaded.push(entry.module);
+      }
+    }
+
+    return loaded.sort((a, b) => (a.metadata.order ?? 99) - (b.metadata.order ?? 99));
   }
 
   /**
-   * Get all engine IDs
+   * Get all engines with async loading
+   */
+  async getAllAsync(): Promise<EngineModule[]> {
+    const engines = await Promise.all(
+      Array.from(this.engines.values()).map((entry) => this.loadEngine(entry))
+    );
+
+    return engines.sort((a, b) => (a.metadata.order ?? 99) - (b.metadata.order ?? 99));
+  }
+
+  /**
+   * Get all engine IDs (no loading required)
    */
   getAllIds(): string[] {
     return Array.from(this.engines.keys());
   }
 
   /**
-   * Get all engine metadata
+   * Get all engine metadata (no loading required)
    */
   getAllMetadata(): EngineMetadata[] {
-    return this.getAll().map(engine => engine.metadata);
+    return Array.from(this.engines.values())
+      .map((entry) => entry.metadata)
+      .sort((a, b) => (a.order ?? 99) - (b.order ?? 99));
   }
 
   /**
-   * Check if an engine is registered
+   * Check if an engine is registered (no loading required)
    */
   has(id: string): boolean {
     return this.engines.has(id);
   }
 
   /**
-   * Get the default engine (first by order)
+   * Get the default engine (first by order, with loading)
    */
   getDefault(): EngineModule | undefined {
-    return this.getAll()[0];
+    const sorted = Array.from(this.engines.values())
+      .sort((a, b) => (a.metadata.order ?? 99) - (b.metadata.order ?? 99));
+
+    for (const entry of sorted) {
+      if (entry.module) {
+        return entry.module;
+      }
+    }
+
+    return undefined;
+  }
+
+  /**
+   * Get the default engine with async loading
+   */
+  async getDefaultAsync(): Promise<EngineModule | undefined> {
+    const sorted = Array.from(this.engines.values())
+      .sort((a, b) => (a.metadata.order ?? 99) - (b.metadata.order ?? 99));
+
+    if (sorted.length === 0) {
+      return undefined;
+    }
+
+    return this.loadEngine(sorted[0]);
   }
 
   /**
@@ -127,10 +267,18 @@ class EngineRegistry {
     this.engines.clear();
     this.initialized = false;
   }
+
+  /**
+   * Check if an engine is loaded (not just registered)
+   */
+  isLoaded(id: string): boolean {
+    const entry = this.engines.get(id);
+    return entry?.module !== undefined;
+  }
 }
 
 // Export singleton instance
 export const registry = new EngineRegistry();
 
-// Initialize on module load
+// Initialize on module load (fast - just registers metadata)
 await registry.initialize();

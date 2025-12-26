@@ -107,7 +107,7 @@ export async function selectEngine(
 
   if (presetEngine) {
     debug(`[DEBUG workflow] Preset/override engine for ${step.agentId}: ${presetEngine}`);
-    const presetEngineModule = registry.get(presetEngine);
+    const presetEngineModule = await registry.getAsync(presetEngine);
     const isPresetAuthed = presetEngineModule
       ? await authCache.isAuthenticated(presetEngineModule.metadata.id, () => presetEngineModule.auth.isAuthenticated())
       : false;
@@ -135,7 +135,7 @@ export async function selectEngine(
     engineType = step.engine;
 
     // If an override is provided but not authenticated, log and fall back (if allowed)
-    const overrideEngine = registry.get(engineType);
+    const overrideEngine = await registry.getAsync(engineType);
     debug(`[DEBUG workflow] Checking auth for override engine...`);
     const isOverrideAuthed = overrideEngine
       ? await authCache.isAuthenticated(overrideEngine.metadata.id, () => overrideEngine.auth.isAuthenticated())
@@ -155,7 +155,7 @@ export async function selectEngine(
       emitter.logMessage(uniqueAgentId, authMsg);
 
       // Find first authenticated engine by order (with caching)
-      const engines = registry.getAll();
+      const engines = await registry.getAllAsync();
       let fallbackEngine = null as typeof overrideEngine | null;
       for (const eng of engines) {
         const isAuth = await authCache.isAuthenticated(
@@ -170,7 +170,7 @@ export async function selectEngine(
 
       // If none authenticated, fall back to registry default (may still require auth)
       if (!fallbackEngine) {
-        fallbackEngine = registry.getDefault() ?? null;
+        fallbackEngine = (await registry.getDefaultAsync()) ?? null;
       }
 
       if (fallbackEngine) {
@@ -182,7 +182,7 @@ export async function selectEngine(
   } else {
     debug(`[DEBUG workflow] No step.engine specified, finding authenticated engine...`);
     // Fallback: find first authenticated engine by order (with caching)
-    const engines = registry.getAll();
+    const engines = await registry.getAllAsync();
     debug(`[DEBUG workflow] Available engines: ${engines.map(e => e.metadata.id).join(', ')}`);
     let foundEngine = null;
 
@@ -202,7 +202,7 @@ export async function selectEngine(
     if (!foundEngine) {
       debug(`[DEBUG workflow] No authenticated engine found, using default`);
       // If no authenticated engine, use default (first by order)
-      foundEngine = registry.getDefault();
+      foundEngine = await registry.getDefaultAsync();
     }
 
     if (!foundEngine) {

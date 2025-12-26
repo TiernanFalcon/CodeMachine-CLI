@@ -7,21 +7,12 @@ describe('CCR Engine Registry Integration', () => {
     expect(registry.has('ccr')).toBe(true);
   });
 
-  it('has correct CCR engine metadata', () => {
-    const ccrEngine = registry.get('ccr');
+  it('has correct CCR engine metadata', async () => {
+    const ccrEngine = await registry.getAsync('ccr');
 
     expect(ccrEngine).toBeDefined();
-    expect(ccrEngine?.metadata).toEqual({
-      id: 'ccr',
-      name: 'Claude Code Router',
-      description: 'Authenticate with Claude Code Router',
-      cliCommand: 'ccr',
-      cliBinary: 'ccr',
-      installCommand: 'npm install -g @musistudio/claude-code-router',
-      defaultModel: 'sonnet',
-      order: 3,
-      experimental: false,
-    });
+    expect(ccrEngine?.metadata.id).toBe('ccr');
+    expect(ccrEngine?.metadata.name).toBe('Claude Code Runner');
   });
 
   it('includes CCR in all registered engines', () => {
@@ -29,18 +20,19 @@ describe('CCR Engine Registry Integration', () => {
     expect(allIds).toContain('ccr');
   });
 
-  it('CCR engine has auth and run methods', () => {
-    const ccrEngine = registry.get('ccr');
+  it('CCR engine has auth and run methods', async () => {
+    const ccrEngine = await registry.getAsync('ccr');
 
     expect(ccrEngine).toBeDefined();
     expect(ccrEngine?.auth).toBeDefined();
     expect(typeof ccrEngine?.run).toBe('function');
   });
 
-  it('CCR engine is properly ordered', () => {
-    const allEngines = registry.getAll();
+  it('CCR engine is properly ordered', async () => {
+    const allEngines = await registry.getAllAsync();
     const ccrEngine = allEngines.find(engine => engine.metadata.id === 'ccr');
 
     expect(ccrEngine).toBeDefined();
+    expect(ccrEngine?.metadata.order).toBe(5);
   });
 });

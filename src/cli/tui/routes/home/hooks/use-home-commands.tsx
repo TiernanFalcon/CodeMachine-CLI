@@ -128,7 +128,8 @@ export function useHomeCommands(options: UseHomeCommandsOptions) {
     const { registry } = await import("../../../../../infra/engines/index.js")
     const { handleLogin } = await import("../../../../commands/auth.command.js")
 
-    const providers = registry.getAll().map((engine) => ({
+    const engines = await registry.getAllAsync()
+    const providers = engines.map((engine) => ({
       title: engine.metadata.name,
       value: engine.metadata.id,
       description: engine.metadata.description,
@@ -140,7 +141,7 @@ export function useHomeCommands(options: UseHomeCommandsOptions) {
         choices={providers}
         onSelect={async (providerId: string) => {
           const providerName = providers.find((p) => p.value === providerId)?.title || "Provider"
-          const engine = registry.get(providerId)
+          const engine = await registry.getAsync(providerId)
 
           if (!engine) {
             dialog.close()
@@ -181,7 +182,8 @@ export function useHomeCommands(options: UseHomeCommandsOptions) {
     const { registry } = await import("../../../../../infra/engines/index.js")
     const { handleLogout } = await import("../../../../commands/auth.command.js")
 
-    const providers = registry.getAll().map((engine) => ({
+    const engines = await registry.getAllAsync()
+    const providers = engines.map((engine) => ({
       title: engine.metadata.name,
       value: engine.metadata.id,
       description: engine.metadata.description,

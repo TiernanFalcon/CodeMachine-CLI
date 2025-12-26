@@ -18,10 +18,10 @@ class DynamicEngine implements Engine {
 }
 
 /**
- * Factory to create engine instances from registry
+ * Factory to create engine instances from registry (async for lazy loading)
  */
-export function createEngine(type: EngineType): Engine {
-  const engineModule = registry.get(type);
+export async function createEngine(type: EngineType): Promise<Engine> {
+  const engineModule = await registry.getAsync(type);
 
   if (!engineModule) {
     const availableEngines = registry.getAllIds().join(', ');
@@ -34,12 +34,12 @@ export function createEngine(type: EngineType): Engine {
 }
 
 /**
- * Get engine by name with fallback to default
+ * Get engine by name with fallback to default (async for lazy loading)
  */
-export function getEngine(type?: EngineType | string): Engine {
+export async function getEngine(type?: EngineType | string): Promise<Engine> {
   // If no type provided, use the default engine (first by order)
   if (!type) {
-    const defaultEngine = registry.getDefault();
+    const defaultEngine = await registry.getDefaultAsync();
     if (!defaultEngine) {
       throw new Error('No engines registered');
     }

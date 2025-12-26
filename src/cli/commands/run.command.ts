@@ -14,7 +14,7 @@ type RunCommandOptions = {
 export async function registerRunCommand(program: Command): Promise<void> {
   // Import registry to get default engine name
   const { registry } = await import('../../infra/engines/index.js');
-  const defaultEngine = registry.getDefault();
+  const defaultEngine = await registry.getDefaultAsync();
   const defaultEngineName = defaultEngine?.metadata.name ?? 'default engine';
 
   program
@@ -63,7 +63,8 @@ async function registerEngineRunCommands(program: Command): Promise<void> {
   const { registry } = await import('../../infra/engines/index.js');
 
   // Register a subcommand for each engine in the registry
-  for (const engine of registry.getAll()) {
+  const engines = await registry.getAllAsync();
+  for (const engine of engines) {
     const engineCommand = program
       .command(engine.metadata.cliCommand)
       .description(`Use ${engine.metadata.name} engine for agent execution`);

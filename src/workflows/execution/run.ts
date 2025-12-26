@@ -102,7 +102,7 @@ export async function runWorkflow(options: RunWorkflowOptions = {}): Promise<voi
   );
 
   if (workflowAgents.length > 0) {
-    const engines = registry.getAll();
+    const engines = await registry.getAllAsync();
     for (const engine of engines) {
       if (engine.syncConfig) {
         await engine.syncConfig({ additionalAgents: workflowAgents });
@@ -146,10 +146,10 @@ export async function runWorkflow(options: RunWorkflowOptions = {}): Promise<voi
   emitter.workflowStarted(template.name, moduleSteps.length);
 
   // Pre-populate timeline
+  const defaultEngine = await registry.getDefaultAsync();
   let moduleIndex = 0;
   visibleSteps.forEach((step, stepIndex) => {
     if (step.type === 'module') {
-      const defaultEngine = registry.getDefault();
       const engineType = step.engine ?? defaultEngine?.metadata.id ?? 'unknown';
       const uniqueAgentId = `${step.agentId}-step-${moduleIndex}`;
 
