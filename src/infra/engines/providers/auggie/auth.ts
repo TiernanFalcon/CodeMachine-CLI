@@ -4,6 +4,12 @@ import { homedir } from 'node:os';
 
 import { expandHomeDir } from '../../../../shared/utils/index.js';
 import { metadata } from './metadata.js';
+import {
+  isCliInstalled,
+  isCliNotFoundError,
+  displayCliNotInstalledError,
+  displayCliNotFoundError,
+} from '../../core/cli-utils.js';
 
 const SENTINEL_FILE = 'auth.json';
 
@@ -22,47 +28,6 @@ async function ensureDataDirExists(dataDir: string): Promise<void> {
 
 function getSentinelPath(auggieHome: string): string {
   return path.join(auggieHome, 'data', SENTINEL_FILE);
-}
-
-async function isCliInstalled(command: string): Promise<boolean> {
-  try {
-    // Resolve command using Bun.which() to handle Windows .cmd files
-    const resolvedCommand = Bun.which(command) ?? command;
-
-    const proc = Bun.spawn([resolvedCommand, '--version'], {
-      stdout: 'pipe',
-      stderr: 'pipe',
-      stdin: 'ignore',
-    });
-
-    // Set a timeout
-    const timeout = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('Timeout')), 3000)
-    );
-
-    const exitCode = await Promise.race([proc.exited, timeout]);
-    const stdout = await new Response(proc.stdout).text();
-    const stderr = await new Response(proc.stderr).text();
-    const out = `${stdout}\n${stderr}`;
-
-    if (typeof exitCode === 'number' && exitCode === 0) return true;
-    if (/not recognized as an internal or external command/i.test(out)) return false;
-    if (/command not found/i.test(out)) return false;
-    if (/No such file or directory/i.test(out)) return false;
-    return false;
-  } catch {
-    return false;
-  }
-}
-
-function logInstallHelp(): void {
-  console.error(`\n────────────────────────────────────────────────────────────`);
-  console.error(`  ⚠️  ${metadata.name} Not Installed`);
-  console.error(`────────────────────────────────────────────────────────────`);
-  console.error(`\nThe '${metadata.cliBinary}' command is not available. Install Auggie via:\n`);
-  console.error(`  npm install -g @augmentcode/auggie`);
-  console.error(`\nDocs: https://docs.augmentcode.com/cli/overview`);
-  console.error(`────────────────────────────────────────────────────────────\n`);
 }
 
 
@@ -119,7 +84,7 @@ export async function ensureAuth(forceLogin = false): Promise<boolean> {
   // Check if CLI is installed
   const cliInstalled = await isCliInstalled(metadata.cliBinary);
   if (!cliInstalled) {
-    logInstallHelp();
+    displayCliNotInstalledError(metadata);
     throw new Error(`${metadata.name} is not installed.`);
   }
 
@@ -147,26 +112,10 @@ export async function ensureAuth(forceLogin = false): Promise<boolean> {
     });
     await proc.exited;
   } catch (error) {
-    const err = error as unknown as { code?: string; stderr?: string; message?: string };
-    const stderr = err?.stderr ?? '';
-    const message = err?.message ?? '';
-    const notFound =
-      err?.code === 'ENOENT' ||
-      /not recognized as an internal or external command/i.test(stderr || message) ||
-      /command not found/i.test(stderr || message) ||
-      /No such file or directory/i.test(stderr || message);
-
-    if (notFound) {
-      console.error(`\n────────────────────────────────────────────────────────────`);
-      console.error(`  ⚠️  ${metadata.name} Not Found`);
-      console.error(`────────────────────────────────────────────────────────────`);
-      console.error(`\n'${metadata.cliBinary} login' failed because the CLI is missing.`);
-      console.error(`Please install ${metadata.name} before trying again:\n`);
-      console.error(`  ${metadata.installCommand}\n`);
-      console.error(`────────────────────────────────────────────────────────────\n`);
+    if (isCliNotFoundError(error)) {
+      displayCliNotFoundError(metadata, 'login');
       throw new Error(`${metadata.name} is not installed.`);
     }
-
     throw error;
   }
 
