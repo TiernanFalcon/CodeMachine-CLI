@@ -1,10 +1,22 @@
-import { createWriteStream, existsSync, mkdirSync, readFileSync, statSync, createReadStream } from 'fs';
+import { createWriteStream, existsSync, mkdirSync, readFileSync, statSync, createReadStream, renameSync, unlinkSync } from 'fs';
 import { dirname } from 'path';
 import type { WriteStream } from 'fs';
 import * as logger from '../../shared/logging/logger.js';
 import { AgentMonitorService } from './monitor.js';
 import { LogLockService } from './logLock.js';
 import { addMarker } from '../../shared/formatters/outputMarkers.js';
+
+/**
+ * Log rotation configuration
+ */
+const LOG_ROTATION = {
+  /** Maximum log file size in bytes (10 MB) */
+  MAX_SIZE: 10 * 1024 * 1024,
+  /** Number of rotated files to keep */
+  MAX_FILES: 5,
+  /** Check rotation every N writes */
+  CHECK_INTERVAL: 100,
+} as const;
 
 /**
  * Manages log file I/O for agents
@@ -16,6 +28,8 @@ export class AgentLoggerService {
   private lockService: LogLockService = new LogLockService();
   // Store full prompts temporarily (for debug mode logging) - cleared after stream creation
   private fullPrompts: Map<number, string> = new Map();
+  // Write counter for rotation checks (check every N writes for performance)
+  private writeCounters: Map<number, number> = new Map();
 
   private constructor() {
     logger.debug('AgentLoggerService initialized');
@@ -102,10 +116,91 @@ export class AgentLoggerService {
   }
 
   /**
+   * Check if log file needs rotation based on size
+   */
+  private needsRotation(logPath: string): boolean {
+    if (!existsSync(logPath)) {
+      return false;
+    }
+    try {
+      const stats = statSync(logPath);
+      return stats.size >= LOG_ROTATION.MAX_SIZE;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Rotate log files: current.log -> current.log.1 -> current.log.2 -> ...
+   * Removes oldest files beyond MAX_FILES limit
+   */
+  private rotateLogFile(logPath: string): void {
+    try {
+      // Delete oldest file if it exists
+      const oldestPath = `${logPath}.${LOG_ROTATION.MAX_FILES}`;
+      if (existsSync(oldestPath)) {
+        unlinkSync(oldestPath);
+      }
+
+      // Shift existing rotated files: .4 -> .5, .3 -> .4, etc.
+      for (let i = LOG_ROTATION.MAX_FILES - 1; i >= 1; i--) {
+        const currentPath = `${logPath}.${i}`;
+        const nextPath = `${logPath}.${i + 1}`;
+        if (existsSync(currentPath)) {
+          renameSync(currentPath, nextPath);
+        }
+      }
+
+      // Rotate current log to .1
+      if (existsSync(logPath)) {
+        renameSync(logPath, `${logPath}.1`);
+      }
+
+      logger.debug(`Rotated log file: ${logPath}`);
+    } catch (error) {
+      logger.error(`Failed to rotate log file ${logPath}: ${error}`);
+    }
+  }
+
+  /**
+   * Check and perform rotation if needed for an agent's log
+   */
+  private checkRotation(agentId: number): void {
+    const monitor = AgentMonitorService.getInstance();
+    const agent = monitor.getAgent(agentId);
+
+    if (!agent) return;
+
+    if (this.needsRotation(agent.logPath)) {
+      // Close current stream before rotation
+      const stream = this.activeStreams.get(agentId);
+      if (stream) {
+        stream.end();
+        this.activeStreams.delete(agentId);
+      }
+
+      // Rotate the file
+      this.rotateLogFile(agent.logPath);
+
+      // Create new stream (will be created on next write)
+      logger.debug(`Log rotation completed for agent ${agentId}`);
+    }
+  }
+
+  /**
    * Write data to an agent's log file
    * If stream doesn't exist, creates it
+   * Checks for log rotation periodically
    */
   write(agentId: number, data: string): void {
+    // Increment write counter and check rotation periodically
+    const count = (this.writeCounters.get(agentId) || 0) + 1;
+    this.writeCounters.set(agentId, count);
+
+    if (count % LOG_ROTATION.CHECK_INTERVAL === 0) {
+      this.checkRotation(agentId);
+    }
+
     let stream = this.activeStreams.get(agentId);
 
     if (!stream) {

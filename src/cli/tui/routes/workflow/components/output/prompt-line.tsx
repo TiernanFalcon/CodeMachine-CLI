@@ -12,12 +12,22 @@
  * - chained: Shows next prompt in chain
  */
 
-import { createSignal, createEffect, onCleanup, Show } from "solid-js"
-import { useKeyboard, useTerminalDimensions } from "@opentui/solid"
+import { createSignal, Show } from "solid-js"
 import { useTheme } from "@tui/shared/context/theme"
-import { ModalBase, ModalFooter } from "@tui/shared/components/modal"
+import { ChainConfirmModal } from "./chain-confirm-modal.js"
+import { useTypingAnimation } from "./use-typing-animation.js"
+import {
+  getPromptSymbol,
+  getSymbolColor,
+  getPlaceholder,
+  getHint,
+  isInteractiveState,
+  getNextStepInfo,
+} from "./prompt-line-helpers.js"
 
 const LARGE_PASTE_THRESHOLD = 1000
+const PLACEHOLDER_TEXT = "Enter to continue or type prompt..."
+
 type PendingPaste = { placeholder: string; content: string }
 
 export type PromptLineState =
@@ -34,180 +44,40 @@ export interface PromptLineProps {
   onFocusExit: () => void
 }
 
-// Confirmation modal for chained prompts
-interface ChainConfirmModalProps {
-  stepIndex: number
-  stepName: string
-  stepDescription: string
-  totalSteps: number
-  onConfirm: () => void
-  onCancel: () => void
-}
-
-function ChainConfirmModal(props: ChainConfirmModalProps) {
-  const themeCtx = useTheme()
-  const dimensions = useTerminalDimensions()
-  const [selectedButton, setSelectedButton] = createSignal<"yes" | "no">("no")
-
-  const modalWidth = () => {
-    const safeWidth = Math.max(40, (dimensions()?.width ?? 80) - 8)
-    return Math.min(safeWidth, 60)
-  }
-
-  useKeyboard((evt) => {
-    if (evt.name === "left" || evt.name === "right") {
-      evt.preventDefault()
-      setSelectedButton((prev) => (prev === "yes" ? "no" : "yes"))
-      return
-    }
-
-    if (evt.name === "return") {
-      evt.preventDefault()
-      if (selectedButton() === "yes") {
-        props.onConfirm()
-      } else {
-        props.onCancel()
-      }
-      return
-    }
-
-    if (evt.name === "y") {
-      evt.preventDefault()
-      props.onConfirm()
-      return
-    }
-    if (evt.name === "n" || evt.name === "escape") {
-      evt.preventDefault()
-      props.onCancel()
-      return
-    }
-  })
-
-  return (
-    <ModalBase width={modalWidth()}>
-      <box paddingBottom={1}>
-        <text fg={themeCtx.theme.warning} attributes={1}>⚠ Confirm Step Transition</text>
-      </box>
-      <box paddingLeft={1} paddingRight={1} paddingBottom={1} flexDirection="column">
-        <text fg={themeCtx.theme.text}>
-          Are you sure you want to proceed to step {props.stepIndex}/{props.totalSteps}?
-        </text>
-        <box height={1} />
-        <text fg={themeCtx.theme.primary} attributes={1}>{props.stepName}</text>
-        <text fg={themeCtx.theme.textMuted}>{props.stepDescription}</text>
-        <box height={1} />
-        <text fg={themeCtx.theme.textMuted}>
-          You cannot return to the previous step once you proceed.
-        </text>
-      </box>
-      <box flexDirection="row" justifyContent="center" gap={2} paddingBottom={1}>
-        <box
-          paddingLeft={2}
-          paddingRight={2}
-          backgroundColor={selectedButton() === "yes" ? themeCtx.theme.warning : themeCtx.theme.backgroundElement}
-          borderColor={selectedButton() === "yes" ? themeCtx.theme.warning : themeCtx.theme.borderSubtle}
-          border
-        >
-          <text fg={selectedButton() === "yes" ? themeCtx.theme.background : themeCtx.theme.text}>Yes, Proceed</text>
-        </box>
-        <box
-          paddingLeft={2}
-          paddingRight={2}
-          backgroundColor={selectedButton() === "no" ? themeCtx.theme.success : themeCtx.theme.backgroundElement}
-          borderColor={selectedButton() === "no" ? themeCtx.theme.success : themeCtx.theme.borderSubtle}
-          border
-        >
-          <text fg={selectedButton() === "no" ? themeCtx.theme.background : themeCtx.theme.text}>Cancel</text>
-        </box>
-      </box>
-      <ModalFooter shortcuts="[Left/Right] Navigate  [ENTER] Confirm  [Y/N] Direct  [Esc] Cancel" />
-    </ModalBase>
-  )
-}
-
 export function PromptLine(props: PromptLineProps) {
   const themeCtx = useTheme()
   const [input, setInput] = createSignal("")
-  const [typingText, setTypingText] = createSignal("")
   const [pendingPastes, setPendingPastes] = createSignal<PendingPaste[]>([])
   const [showConfirm, setShowConfirm] = createSignal(false)
   const [pendingSubmitValue, setPendingSubmitValue] = createSignal("")
   let pasteCounter = 0
 
-  const PLACEHOLDER = "Enter to continue or type prompt..."
-
-  // Typing effect with proper cleanup using onCleanup inside createEffect
-  createEffect(() => {
-    const shouldAnimate = props.isFocused &&
-      (props.state.mode === "active" || props.state.mode === "chained") &&
-      input() === ""
-
-    if (!shouldAnimate) {
-      setTypingText("")
-      return
-    }
-
-    // Animation state
-    let charIndex = 0
-    let forward = true
-    let pauseCounter = 0
-    const TYPING_SPEED = 40
-    const PAUSE_CYCLES = 25 // cycles to pause (1000ms / 40ms)
-
-    setTypingText("")
-
-    const interval = setInterval(() => {
-      if (forward) {
-        if (charIndex < PLACEHOLDER.length) {
-          charIndex++
-          setTypingText(PLACEHOLDER.slice(0, charIndex))
-        } else {
-          pauseCounter++
-          if (pauseCounter >= PAUSE_CYCLES) {
-            forward = false
-            pauseCounter = 0
-          }
-        }
-      } else {
-        if (charIndex > 0) {
-          charIndex--
-          setTypingText(PLACEHOLDER.slice(0, charIndex))
-        } else {
-          pauseCounter++
-          if (pauseCounter >= PAUSE_CYCLES) {
-            forward = true
-            pauseCounter = 0
-          }
-        }
-      }
-    }, TYPING_SPEED)
-
-    // Cleanup when effect re-runs or component unmounts
-    onCleanup(() => {
-      clearInterval(interval)
-    })
+  // Typing animation for placeholder
+  const typingText = useTypingAnimation({
+    text: PLACEHOLDER_TEXT,
+    isActive: () =>
+      props.isFocused &&
+      isInteractiveState(props.state) &&
+      input() === "",
   })
 
-  // Keyboard is handled by input's onKeyDown - no useKeyboard here to avoid race conditions
+  // Computed state helpers
+  const isInteractive = () => isInteractiveState(props.state)
+  const showInput = () => props.isFocused
 
+  // Submit handlers
   const prepareSubmitValue = () => {
     let value = input().trim()
-
-    // Replace placeholders with actual pasted content
     for (const { placeholder, content } of pendingPastes()) {
       value = value.replace(placeholder, content)
     }
-
     return value
   }
 
   const doSubmit = (value: string) => {
-    // Clear paste state
     setPendingPastes([])
     pasteCounter = 0
     setInput("")
-
-    // Submit (empty or with content)
     props.onSubmit(value)
   }
 
@@ -235,37 +105,31 @@ export function PromptLine(props: PromptLineProps) {
     setPendingSubmitValue("")
   }
 
+  // Input handlers
   const handleKeyDown = (evt: { name?: string; ctrl?: boolean; preventDefault?: () => void }) => {
-    // Enter - submit
     if (evt.name === "return") {
       handleSubmit()
       return
     }
 
-    // Left arrow at start - exit focus
     if (evt.name === "left" && input() === "") {
       evt.preventDefault?.()
       props.onFocusExit()
       return
     }
-
-    // Note: Escape and Ctrl+S are handled at workflow-keyboard level
-    // to avoid race conditions with multiple useKeyboard hooks
   }
 
-  // Handle paste events (Ctrl+V, right-click paste, terminal paste)
   const handlePaste = (evt: { text: string; preventDefault?: () => void }) => {
     if (!isInteractive() || !evt.text) return
 
-    // Normalize line endings (Windows ConPTY sends CR-only in bracketed paste)
+    // Normalize line endings
     const normalized = evt.text.replace(/\r\n/g, "\n").replace(/\r/g, "\n")
-    // Replace newlines with spaces for single-line input
     const cleanText = normalized.replace(/\n+/g, " ").trim()
 
     if (!cleanText) return
     evt.preventDefault?.()
 
-    // Large paste: use placeholder to avoid UI slowdown
+    // Large paste: use placeholder
     if (cleanText.length > LARGE_PASTE_THRESHOLD) {
       pasteCounter++
       const placeholder = `[Pasted Content ${cleanText.length} chars${pasteCounter > 1 ? ` #${pasteCounter}` : ""}]`
@@ -276,66 +140,12 @@ export function PromptLine(props: PromptLineProps) {
     }
   }
 
-  const isInteractive = () =>
-    props.state.mode === "active" || props.state.mode === "chained"
-
-  const getPromptSymbol = () => {
-    if (props.state.mode === "disabled") return "·"
-    if (props.state.mode === "active" && props.state.reason === "paused") return "||"
-    return "❯"
-  }
-
-  const getSymbolColor = () => {
-    if (props.state.mode === "disabled") return themeCtx.theme.textMuted
-    if (props.state.mode === "active" && props.state.reason === "paused")
-      return themeCtx.theme.warning
-    return themeCtx.theme.primary
-  }
-
-  const getPlaceholder = () => {
-    if (props.state.mode === "disabled") return "Workflow idle"
-    if (props.state.mode === "passive") return "Agent working..."
-    if (props.state.mode === "active") {
-      if (props.state.reason === "paused") return "Type to steer or Enter to resume"
-      return "Type to steer agent..."
-    }
-    if (props.state.mode === "chained") {
-      return `Next: "${props.state.name}" (${props.state.index}/${props.state.total})`
-    }
-    return ""
-  }
-
-  const getHint = () => {
-    // Show chained step info even in passive mode
-    if (props.state.mode === "passive" && props.state.chainedStep) {
-      const step = props.state.chainedStep
-      return `Step ${step.index}/${step.total}: ${step.name}`
-    }
-    if (!isInteractive()) return null
-    if (props.state.mode === "chained") {
-      return `Step ${props.state.index}/${props.state.total}: ${props.state.name}`
-    }
-    if (props.state.mode === "active" && props.state.reason === "paused") {
-      return "[Enter] Resume"
-    }
-    return "[Enter] Send"
-  }
-
-  // Always show input when focused (for stability), but only allow typing when interactive
-  const showInput = () => props.isFocused
-
-  // Get next step info for confirmation modal
-  const getNextStepInfo = () => {
-    if (props.state.mode === "chained") {
-      return {
-        index: props.state.index + 1,
-        name: props.state.name,
-        description: props.state.description,
-        total: props.state.total,
-      }
-    }
-    return { index: 0, name: "", description: "", total: 0 }
-  }
+  // Get visual styling using helpers
+  const symbolColor = () => getSymbolColor(props.state, themeCtx.theme)
+  const promptSymbol = () => getPromptSymbol(props.state)
+  const placeholder = () => getPlaceholder(props.state)
+  const hint = () => getHint(props.state, isInteractive())
+  const nextStepInfo = () => getNextStepInfo(props.state)
 
   return (
     <>
@@ -351,18 +161,18 @@ export function PromptLine(props: PromptLineProps) {
         <box flexDirection="row" height={1} justifyContent="space-between">
           <box flexDirection="row" flexGrow={1}>
             {/* Prompt symbol */}
-            <text fg={getSymbolColor()}>{getPromptSymbol()} </text>
+            <text fg={symbolColor()}>{promptSymbol()} </text>
 
             {/* Placeholder text (when not focused) */}
             <Show when={!showInput()}>
-              <text fg={themeCtx.theme.textMuted}>{getPlaceholder()}</text>
+              <text fg={themeCtx.theme.textMuted}>{placeholder()}</text>
             </Show>
 
-            {/* Input (always shown when focused to maintain stable focus) */}
+            {/* Input (always shown when focused) */}
             <Show when={showInput()}>
               <input
                 value={input()}
-                placeholder={isInteractive() ? typingText() : getPlaceholder()}
+                placeholder={isInteractive() ? typingText() : placeholder()}
                 placeholderColor={themeCtx.theme.textMuted}
                 onInput={isInteractive() ? setInput : () => {}}
                 onKeyDown={isInteractive() ? handleKeyDown : () => {}}
@@ -379,8 +189,8 @@ export function PromptLine(props: PromptLineProps) {
           </box>
 
           {/* Hint */}
-          <Show when={getHint()}>
-            <text fg={themeCtx.theme.textMuted}> {getHint()}</text>
+          <Show when={hint()}>
+            <text fg={themeCtx.theme.textMuted}> {hint()}</text>
           </Show>
         </box>
       </box>
@@ -388,10 +198,10 @@ export function PromptLine(props: PromptLineProps) {
       {/* Confirmation modal for chained prompts */}
       <Show when={showConfirm()}>
         <ChainConfirmModal
-          stepIndex={getNextStepInfo().index}
-          stepName={getNextStepInfo().name}
-          stepDescription={getNextStepInfo().description}
-          totalSteps={getNextStepInfo().total}
+          stepIndex={nextStepInfo().index}
+          stepName={nextStepInfo().name}
+          stepDescription={nextStepInfo().description}
+          totalSteps={nextStepInfo().total}
           onConfirm={handleConfirm}
           onCancel={handleCancelConfirm}
         />
