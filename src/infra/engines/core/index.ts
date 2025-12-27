@@ -13,3 +13,9 @@ export * from './factory.js';
 
 // Export registry
 export { registry } from './registry.js';
+
+// Export error recovery
+export * from './error-recovery.js';
+
+// Export circuit breaker
+export * from './circuit-breaker.js';
