@@ -20,7 +20,7 @@ This document tracks planned improvements, enhancements, and technical debt item
 | Priority | Item | Description | Status |
 |----------|------|-------------|--------|
 | High | **TelemetryParser Coverage** | Add tests for `telemetryParser.ts` files (currently at 0% coverage) | ✅ Done |
-| High | **Integration Tests** | Add end-to-end workflow execution tests | Open |
+| High | **Integration Tests** | Add end-to-end workflow execution tests | ✅ Done |
 | Medium | **Provider Tests** | Improve coverage for engine providers (Gemini, Auggie, OpenCode) | Open |
 | Medium | **TUI Component Tests** | Add UI component testing with mock adapters | Open |
 

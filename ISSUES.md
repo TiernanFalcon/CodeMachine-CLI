@@ -238,9 +238,11 @@ Dead code that should be removed or integrated.
 ### ISSUE-022: Silent error swallowing across providers
 **Severity:** MEDIUM
 **Files:** Multiple engine provider files
-**Status:** Open
+**Status:** ✅ Fixed
 
 Errors logged nowhere with `// Ignore errors silently` pattern.
+
+**Fix:** Added conditional debug logging to silent catch blocks. Errors now logged when LOG_LEVEL=debug or DEBUG env var is set.
 
 ---
 
@@ -289,9 +291,11 @@ Log files have no size limit or rotation - can consume unlimited disk.
 ### ISSUE-027: Singleton pattern not thread-safe
 **Severity:** MEDIUM
 **Files:** `monitor.ts`, `logger.ts`, `service.ts`
-**Status:** Open
+**Status:** ✅ Fixed
 
 Singleton pattern uses simple check without synchronization.
+
+**Fix:** Added creation guards to detect recursive getInstance() calls and prevent partial initialization. Added resetInstance() for testing.
 
 ---
 
@@ -316,9 +320,11 @@ Modal uses generic elements with no semantic HTML or ARIA attributes.
 ### ISSUE-030: Magic numbers throughout codebase
 **Severity:** LOW
 **Files:** Multiple
-**Status:** Open
+**Status:** ✅ Fixed
 
 Should be named constants at module or config level.
+
+**Fix:** Added UI constants to timeouts.ts (TOAST_DURATION, DIALOG_DELAY, UI_DELAY) and limits.ts (MAX_EVENT_HISTORY_SIZE, LOG_ROTATION).
 
 ---
 
