@@ -1,7 +1,7 @@
 import * as path from 'node:path';
 
 import type { EngineType } from '../../infra/engines/index.js';
-import { getEngine } from '../../infra/engines/index.js';
+import { getEngine, registry } from '../../infra/engines/index.js';
 import { MemoryAdapter } from '../../infra/fs/memory-adapter.js';
 import { MemoryStore } from '../index.js';
 import { loadAgentConfig } from './config.js';
@@ -439,6 +439,12 @@ export async function executeAgent(
   // Get engine and execute (async for lazy loading)
   // NOTE: Prompt is already complete - no template loading or building here
   const engine = await getEngine(engineType);
+
+  // Check if resume was requested but engine doesn't support it
+  if (resumeSessionId && !registry.supportsResume(engineType)) {
+    info(`[AgentRunner] Resume requested but engine "${engineType}" does not support session resume. Starting new session.`);
+  }
+
   debug(`[AgentRunner] Starting engine execution: engine=%s model=%s resumeSessionId=%s`,
     engineType, model, resumeSessionId ?? '(new session)');
 

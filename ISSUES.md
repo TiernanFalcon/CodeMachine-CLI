@@ -302,9 +302,11 @@ Singleton pattern uses simple check without synchronization.
 ### ISSUE-028: Inconsistent resume support across providers
 **Severity:** MEDIUM
 **Files:** All engine providers
-**Status:** Open
+**Status:** ✅ Fixed
 
 Only Codex and OpenCode have resume support.
+
+**Fix:** Added `supportsResume` metadata flag to all engines. Registry now has `supportsResume()` and `getResumableEngineIds()` methods. Runner logs warning when resume is requested but engine doesn't support it.
 
 ---
 

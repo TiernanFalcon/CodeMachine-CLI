@@ -26,15 +26,16 @@ interface LazyEngine {
 /**
  * Engine metadata for lazy registration
  * Allows showing engine info without loading the full module
+ * Note: supportsResume indicates if engine can continue from a previous session
  */
 const ENGINE_METADATA: EngineMetadata[] = [
-  { id: 'gemini', name: 'Gemini', order: 1, defaultModel: 'gemini-2.0-flash' },
-  { id: 'codex', name: 'Codex', order: 2, defaultModel: 'codex' },
-  { id: 'claude', name: 'Claude', order: 3, defaultModel: 'claude-sonnet-4-20250514' },
-  { id: 'cursor', name: 'Cursor', order: 4, defaultModel: 'claude-sonnet' },
-  { id: 'ccr', name: 'Claude Code Runner', order: 5, defaultModel: 'claude-sonnet-4-20250514' },
-  { id: 'opencode', name: 'OpenCode', order: 6, defaultModel: 'anthropic/claude-sonnet-4-20250514' },
-  { id: 'auggie', name: 'Auggie', order: 7, defaultModel: 'anthropic/claude-sonnet-4-20250514' },
+  { id: 'gemini', name: 'Gemini', order: 1, defaultModel: 'gemini-2.0-flash', supportsResume: false },
+  { id: 'codex', name: 'Codex', order: 2, defaultModel: 'codex', supportsResume: true },
+  { id: 'claude', name: 'Claude', order: 3, defaultModel: 'claude-sonnet-4-20250514', supportsResume: false },
+  { id: 'cursor', name: 'Cursor', order: 4, defaultModel: 'claude-sonnet', supportsResume: false },
+  { id: 'ccr', name: 'Claude Code Runner', order: 5, defaultModel: 'claude-sonnet-4-20250514', supportsResume: false },
+  { id: 'opencode', name: 'OpenCode', order: 6, defaultModel: 'anthropic/claude-sonnet-4-20250514', supportsResume: true },
+  { id: 'auggie', name: 'Auggie', order: 7, defaultModel: 'anthropic/claude-sonnet-4-20250514', supportsResume: false },
 ];
 
 /**
@@ -274,6 +275,23 @@ class EngineRegistry {
   isLoaded(id: string): boolean {
     const entry = this.engines.get(id);
     return entry?.module !== undefined;
+  }
+
+  /**
+   * Check if an engine supports session resume (no loading required)
+   */
+  supportsResume(id: string): boolean {
+    const entry = this.engines.get(id);
+    return entry?.metadata.supportsResume === true;
+  }
+
+  /**
+   * Get IDs of all engines that support resume (no loading required)
+   */
+  getResumableEngineIds(): string[] {
+    return Array.from(this.engines.entries())
+      .filter(([_, entry]) => entry.metadata.supportsResume === true)
+      .map(([id]) => id);
   }
 }
 

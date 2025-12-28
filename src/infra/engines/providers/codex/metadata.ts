@@ -10,4 +10,5 @@ export const metadata: EngineMetadata = {
   defaultModel: 'gpt-5-codex',
   defaultModelReasoningEffort: 'medium',
   order: 3,
+  supportsResume: true,
 };

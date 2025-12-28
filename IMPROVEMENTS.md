@@ -31,7 +31,7 @@ This document tracks planned improvements, enhancements, and technical debt item
 | Priority | Item | Description | Status |
 |----------|------|-------------|--------|
 | High | **Log Rotation** | Add log file size limits and automatic rotation in `src/agents/monitoring/logger.ts` | ✅ Done |
-| Medium | **Resume Support** | Implement consistent resume capability across all providers | Open |
+| Medium | **Resume Support** | Implement consistent resume capability across all providers | ✅ Done |
 | Medium | **Streaming Improvements** | Better progress indicators during long operations | Open |
 | Low | **Accessibility** | Add ARIA labels for TUI components | Open |
 
