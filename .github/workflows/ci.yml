@@ -59,23 +59,17 @@ jobs:
       - name: Show TypeScript version
         run: |
           echo "=== Environment Info ==="
-          echo "TypeScript version:"
-          npx tsc --version
-          echo "Bun version:"
-          bun --version
-          echo "Node version:"
-          node --version
-          echo "=== Installed packages ==="
-          cat node_modules/typescript/package.json | grep version
-          cat node_modules/@types/bun/package.json | grep version || echo "No @types/bun"
-          echo "=== tsconfig.json skipLibCheck setting ==="
-          cat tsconfig.json | grep skipLibCheck
+          echo "TypeScript version (via node_modules):"
+          ./node_modules/.bin/tsc --version
+          echo "Bun version: $(bun --version)"
+          echo "Node version: $(node --version)"
+          echo "=== @types/bun version ==="
+          cat node_modules/@types/bun/package.json | grep '"version"' || echo "No @types/bun"
+          echo "=== tsconfig.json ==="
+          cat tsconfig.json
 
       - name: Run TypeScript type check
-        run: |
-          echo "=== Running tsc --noEmit ==="
-          npx tsc --noEmit 2>&1
-          echo "=== TypeScript completed successfully ==="
+        run: ./node_modules/.bin/tsc --noEmit
 
   test:
     name: Test
