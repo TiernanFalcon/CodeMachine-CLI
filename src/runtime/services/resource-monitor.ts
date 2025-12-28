@@ -234,9 +234,14 @@ export async function getResourceMetrics(): Promise<ResourceMetrics> {
 type MonitorEventType = 'metrics' | 'alert' | 'start' | 'stop';
 
 /**
+ * Resource monitor event data types
+ */
+type MonitorEventData = ResourceMetrics | ResourceAlert | { timestamp: Date };
+
+/**
  * Resource monitor event listener
  */
-type MonitorEventListener<T> = (data: T) => void;
+type MonitorEventListener<T = MonitorEventData> = (data: T) => void;
 
 /**
  * Resource monitor class for continuous monitoring
@@ -245,7 +250,7 @@ export class ResourceMonitor {
   private config: ResourceMonitorConfig;
   private interval: ReturnType<typeof setInterval> | null = null;
   private history: ResourceMetrics[] = [];
-  private listeners: Map<MonitorEventType, MonitorEventListener<unknown>[]> = new Map();
+  private listeners: Map<MonitorEventType, MonitorEventListener[]> = new Map();
   private isRunning = false;
 
   constructor(config: Partial<ResourceMonitorConfig> = {}) {
@@ -317,16 +322,17 @@ export class ResourceMonitor {
   on(event: 'metrics', listener: MonitorEventListener<ResourceMetrics>): () => void;
   on(event: 'alert', listener: MonitorEventListener<ResourceAlert>): () => void;
   on(event: 'start' | 'stop', listener: MonitorEventListener<{ timestamp: Date }>): () => void;
-  on(event: MonitorEventType, listener: MonitorEventListener<unknown>): () => void {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  on(event: MonitorEventType, listener: MonitorEventListener<any>): () => void {
     if (!this.listeners.has(event)) {
       this.listeners.set(event, []);
     }
-    this.listeners.get(event)!.push(listener);
+    this.listeners.get(event)!.push(listener as MonitorEventListener);
 
     return () => {
       const listeners = this.listeners.get(event);
       if (listeners) {
-        const index = listeners.indexOf(listener);
+        const index = listeners.indexOf(listener as MonitorEventListener);
         if (index >= 0) {
           listeners.splice(index, 1);
         }

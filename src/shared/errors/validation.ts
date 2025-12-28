@@ -7,13 +7,28 @@
 import { CodeMachineError } from './base.js';
 
 /**
+ * Validation error codes - union of all possible validation error types
+ */
+export type ValidationErrorCode =
+  | 'VALIDATION_ERROR'
+  | 'REQUIRED_FIELD'
+  | 'INVALID_FIELD'
+  | 'SPECIFICATION_ERROR'
+  | 'PLACEHOLDER_ERROR'
+  | 'EMPTY_CONTENT'
+  | 'TYPE_CHECK_FAILED'
+  | 'PATH_VALIDATION_ERROR'
+  | 'CONFIG_VALIDATION_ERROR';
+
+/**
  * Base class for all validation errors
  */
 export class ValidationError extends CodeMachineError {
-  readonly code = 'VALIDATION_ERROR';
+  declare readonly code: ValidationErrorCode;
 
   constructor(message: string, options?: { cause?: Error }) {
     super(message, options);
+    (this as { code: ValidationErrorCode }).code = 'VALIDATION_ERROR';
   }
 }
 
@@ -21,12 +36,13 @@ export class ValidationError extends CodeMachineError {
  * Required field is missing or empty
  */
 export class RequiredFieldError extends ValidationError {
-  readonly code = 'REQUIRED_FIELD';
+  declare readonly code: 'REQUIRED_FIELD';
   readonly fieldName: string;
 
   constructor(fieldName: string, context?: string) {
     const ctx = context ? ` in ${context}` : '';
     super(`Required field '${fieldName}' is missing or empty${ctx}`);
+    (this as { code: 'REQUIRED_FIELD' }).code = 'REQUIRED_FIELD';
     this.fieldName = fieldName;
   }
 }
@@ -35,13 +51,14 @@ export class RequiredFieldError extends ValidationError {
  * Field value is invalid
  */
 export class InvalidFieldError extends ValidationError {
-  readonly code = 'INVALID_FIELD';
+  declare readonly code: 'INVALID_FIELD';
   readonly fieldName: string;
   readonly value: unknown;
 
   constructor(fieldName: string, value: unknown, reason?: string) {
     const r = reason ? `: ${reason}` : '';
     super(`Invalid value for '${fieldName}'${r}`);
+    (this as { code: 'INVALID_FIELD' }).code = 'INVALID_FIELD';
     this.fieldName = fieldName;
     this.value = value;
   }
@@ -51,7 +68,7 @@ export class InvalidFieldError extends ValidationError {
  * Specification file validation failed
  */
 export class SpecificationError extends ValidationError {
-  readonly code = 'SPECIFICATION_ERROR';
+  declare readonly code: 'SPECIFICATION_ERROR';
   readonly specPath: string;
 
   constructor(specPath: string, issue: 'not_found' | 'empty' | 'template') {
@@ -66,6 +83,7 @@ export class SpecificationError extends ValidationError {
       `2. Describe your goals and constraints\n` +
       `3. Save and run /start again`
     );
+    (this as { code: 'SPECIFICATION_ERROR' }).code = 'SPECIFICATION_ERROR';
     this.specPath = specPath;
   }
 }
@@ -74,12 +92,13 @@ export class SpecificationError extends ValidationError {
  * Placeholder processing error
  */
 export class PlaceholderError extends ValidationError {
-  readonly code = 'PLACEHOLDER_ERROR';
+  declare readonly code: 'PLACEHOLDER_ERROR';
   readonly placeholderName: string;
   readonly filePath: string;
 
   constructor(placeholderName: string, filePath: string) {
     super(`Required file not found: {${placeholderName}}\n\nExpected file: ${filePath}`);
+    (this as { code: 'PLACEHOLDER_ERROR' }).code = 'PLACEHOLDER_ERROR';
     this.placeholderName = placeholderName;
     this.filePath = filePath;
   }
@@ -89,11 +108,12 @@ export class PlaceholderError extends ValidationError {
  * Empty content where non-empty is required
  */
 export class EmptyContentError extends ValidationError {
-  readonly code = 'EMPTY_CONTENT';
+  declare readonly code: 'EMPTY_CONTENT';
   readonly context: string;
 
   constructor(context: string) {
     super(`${context} cannot be empty`);
+    (this as { code: 'EMPTY_CONTENT' }).code = 'EMPTY_CONTENT';
     this.context = context;
   }
 }
@@ -102,12 +122,13 @@ export class EmptyContentError extends ValidationError {
  * Type check failed
  */
 export class TypeCheckError extends ValidationError {
-  readonly code = 'TYPE_CHECK_FAILED';
+  declare readonly code: 'TYPE_CHECK_FAILED';
   readonly expected: string;
   readonly actual: string;
 
   constructor(fieldName: string, expected: string, actual: string) {
     super(`Type error for '${fieldName}': expected ${expected}, got ${actual}`);
+    (this as { code: 'TYPE_CHECK_FAILED' }).code = 'TYPE_CHECK_FAILED';
     this.expected = expected;
     this.actual = actual;
   }

@@ -9,9 +9,9 @@ import {
   validateIdentifier,
   validateObject,
   validateArray,
-  validateOptional,
+  validateOptional as _validateOptional,
   validateEnum,
-  combineResults,
+  combineResults as _combineResults,
 } from './validators.js';
 import {
   ValidationResult,
@@ -43,7 +43,7 @@ export function validateAgentConfig(
   configFile?: string
 ): ValidationResult<AgentConfigSchema> {
   const objResult = validateObject(config, 'agentConfig');
-  if (!objResult.valid) return objResult as ValidationResult<AgentConfigSchema>;
+  if (!objResult.valid) return objResult as unknown as ValidationResult<AgentConfigSchema>;
 
   const obj = objResult.value!;
   const errors: ValidationError[] = [];
@@ -105,7 +105,7 @@ export function validateAgentConfig(
     return invalidResult(errors);
   }
 
-  return validResult(obj as AgentConfigSchema);
+  return validResult(obj as unknown as AgentConfigSchema);
 }
 
 // =============================================================================
@@ -129,7 +129,7 @@ export function validateWorkflowStep(
   path: string = 'step'
 ): ValidationResult<WorkflowStepSchema> {
   const objResult = validateObject(step, path);
-  if (!objResult.valid) return objResult as ValidationResult<WorkflowStepSchema>;
+  if (!objResult.valid) return objResult as unknown as ValidationResult<WorkflowStepSchema>;
 
   const obj = objResult.value!;
   const errors: ValidationError[] = [];
@@ -187,7 +187,7 @@ export function validateWorkflowStep(
     return invalidResult(errors);
   }
 
-  return validResult(obj as WorkflowStepSchema);
+  return validResult(obj as unknown as WorkflowStepSchema);
 }
 
 // =============================================================================

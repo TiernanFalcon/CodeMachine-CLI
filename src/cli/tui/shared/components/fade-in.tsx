@@ -38,10 +38,8 @@ export function FadeIn(props: FadeInProps) {
   // Apply opacity directly to child element instead of wrapping
   const child = resolved()
   if (child && typeof child === 'object' && 'type' in child) {
-    // @ts-expect-error - opacity is a valid box property in OpenTUI
     return <box opacity={opacity()} flexGrow={1}>{child}</box>
   }
 
-  // @ts-expect-error - opacity is a valid box property in OpenTUI
   return <box opacity={opacity()} flexGrow={1}>{props.children}</box>
 }

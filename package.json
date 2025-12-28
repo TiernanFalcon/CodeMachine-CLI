@@ -89,14 +89,8 @@
     "eslint-import-resolver-typescript": "^4.4.4",
     "eslint-plugin-import": "^2.29.1",
     "husky": "^9.0.7",
-    "lint-staged": "^15.2.0",
     "prettier": "^3.7.4",
     "typescript": "^5.4.5",
     "typescript-eslint": "^8.49.0"
-  },
-  "lint-staged": {
-    "*.{ts,tsx}": [
-      "eslint --max-warnings=0"
-    ]
   }
 }

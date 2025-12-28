@@ -7,10 +7,23 @@
 import { CodeMachineError } from './base.js';
 
 /**
+ * Engine error codes - union of all possible engine error types
+ */
+export type EngineErrorCode =
+  | 'ENGINE_ERROR'
+  | 'ENGINE_NOT_FOUND'
+  | 'NO_ENGINES_REGISTERED'
+  | 'ENGINE_AUTH_REQUIRED'
+  | 'ENGINE_CLI_NOT_INSTALLED'
+  | 'ENGINE_EXECUTION_FAILED'
+  | 'ENGINE_TIMEOUT'
+  | 'ENGINE_RATE_LIMITED';
+
+/**
  * Base class for all engine-related errors
  */
 export class EngineError extends CodeMachineError {
-  readonly code = 'ENGINE_ERROR';
+  declare readonly code: EngineErrorCode;
   readonly engineId?: string;
 
   constructor(
@@ -22,6 +35,7 @@ export class EngineError extends CodeMachineError {
     }
   ) {
     super(message, options);
+    (this as { code: EngineErrorCode }).code = 'ENGINE_ERROR';
     this.engineId = options?.engineId;
   }
 }
@@ -30,13 +44,14 @@ export class EngineError extends CodeMachineError {
  * Engine not found in registry
  */
 export class EngineNotFoundError extends EngineError {
-  readonly code = 'ENGINE_NOT_FOUND';
+  declare readonly code: 'ENGINE_NOT_FOUND';
 
   constructor(engineId: string, availableEngines?: string[]) {
     const available = availableEngines?.length
       ? ` Available engines: ${availableEngines.join(', ')}`
       : '';
     super(`Engine not found: ${engineId}.${available}`, { engineId });
+    (this as { code: 'ENGINE_NOT_FOUND' }).code = 'ENGINE_NOT_FOUND';
   }
 }
 
@@ -44,10 +59,11 @@ export class EngineNotFoundError extends EngineError {
  * No engines registered in the system
  */
 export class NoEnginesRegisteredError extends EngineError {
-  readonly code = 'NO_ENGINES_REGISTERED';
+  declare readonly code: 'NO_ENGINES_REGISTERED';
 
   constructor() {
     super('No engines registered. Please install at least one engine.');
+    (this as { code: 'NO_ENGINES_REGISTERED' }).code = 'NO_ENGINES_REGISTERED';
   }
 }
 
@@ -55,13 +71,14 @@ export class NoEnginesRegisteredError extends EngineError {
  * Engine authentication required
  */
 export class EngineAuthRequiredError extends EngineError {
-  readonly code = 'ENGINE_AUTH_REQUIRED';
+  declare readonly code: 'ENGINE_AUTH_REQUIRED';
 
   constructor(engineName: string, engineId: string) {
     super(
       `${engineName} authentication required. Run: codemachine auth login`,
       { engineId, recoverable: true }
     );
+    (this as { code: 'ENGINE_AUTH_REQUIRED' }).code = 'ENGINE_AUTH_REQUIRED';
   }
 }
 
@@ -69,7 +86,7 @@ export class EngineAuthRequiredError extends EngineError {
  * Engine CLI not installed
  */
 export class EngineCLINotInstalledError extends EngineError {
-  readonly code = 'ENGINE_CLI_NOT_INSTALLED';
+  declare readonly code: 'ENGINE_CLI_NOT_INSTALLED';
   readonly installInstructions?: string;
 
   constructor(
@@ -84,6 +101,7 @@ export class EngineCLINotInstalledError extends EngineError {
       engineId,
       recoverable: true,
     });
+    (this as { code: 'ENGINE_CLI_NOT_INSTALLED' }).code = 'ENGINE_CLI_NOT_INSTALLED';
     this.installInstructions = installInstructions;
   }
 }
@@ -92,7 +110,7 @@ export class EngineCLINotInstalledError extends EngineError {
  * Engine execution failed
  */
 export class EngineExecutionError extends EngineError {
-  readonly code = 'ENGINE_EXECUTION_FAILED';
+  declare readonly code: 'ENGINE_EXECUTION_FAILED';
   readonly exitCode?: number;
 
   constructor(
@@ -104,6 +122,7 @@ export class EngineExecutionError extends EngineError {
     }
   ) {
     super(message, { engineId, cause: options?.cause });
+    (this as { code: 'ENGINE_EXECUTION_FAILED' }).code = 'ENGINE_EXECUTION_FAILED';
     this.exitCode = options?.exitCode;
   }
 }
@@ -112,7 +131,7 @@ export class EngineExecutionError extends EngineError {
  * Engine execution timed out
  */
 export class EngineTimeoutError extends EngineError {
-  readonly code = 'ENGINE_TIMEOUT';
+  declare readonly code: 'ENGINE_TIMEOUT';
   readonly timeoutMs: number;
 
   constructor(engineId: string, timeoutMs: number) {
@@ -120,6 +139,7 @@ export class EngineTimeoutError extends EngineError {
       engineId,
       recoverable: true,
     });
+    (this as { code: 'ENGINE_TIMEOUT' }).code = 'ENGINE_TIMEOUT';
     this.timeoutMs = timeoutMs;
   }
 }
@@ -128,7 +148,7 @@ export class EngineTimeoutError extends EngineError {
  * Engine rate limited
  */
 export class EngineRateLimitError extends EngineError {
-  readonly code = 'ENGINE_RATE_LIMITED';
+  declare readonly code: 'ENGINE_RATE_LIMITED';
   readonly retryAfterMs?: number;
 
   constructor(engineId: string, retryAfterMs?: number) {
@@ -139,6 +159,7 @@ export class EngineRateLimitError extends EngineError {
       engineId,
       recoverable: true,
     });
+    (this as { code: 'ENGINE_RATE_LIMITED' }).code = 'ENGINE_RATE_LIMITED';
     this.retryAfterMs = retryAfterMs;
   }
 }

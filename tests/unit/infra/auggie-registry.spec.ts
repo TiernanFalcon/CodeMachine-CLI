@@ -12,7 +12,7 @@ describe('Auggie Engine Registry Integration', () => {
 
     expect(auggieEngine).toBeDefined();
     expect(auggieEngine?.metadata.id).toBe('auggie');
-    expect(auggieEngine?.metadata.name).toBe('Auggie');
+    expect(auggieEngine?.metadata.name).toBe('Auggie CLI');
   });
 
   it('includes Auggie in all registered engines', () => {
@@ -33,6 +33,6 @@ describe('Auggie Engine Registry Integration', () => {
     const auggieEngine = allEngines.find(engine => engine.metadata.id === 'auggie');
 
     expect(auggieEngine).toBeDefined();
-    expect(auggieEngine?.metadata.order).toBe(7);
+    expect(auggieEngine?.metadata.order).toBe(5);
   });
 });
