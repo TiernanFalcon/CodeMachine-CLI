@@ -56,6 +56,13 @@ jobs:
       - name: Install dependencies
         run: bun install
 
+      - name: Show TypeScript version
+        run: |
+          echo "TypeScript version:"
+          npx tsc --version
+          echo "Bun version:"
+          bun --version
+
       - name: Run TypeScript type check
         run: bun run typecheck
 
