@@ -20,7 +20,7 @@ This document tracks planned improvements, enhancements, and technical debt item
 | Priority | Item | Description | Status |
 |----------|------|-------------|--------|
 | High | **TelemetryParser Coverage** | Add tests for `telemetryParser.ts` files (currently at 0% coverage) | ✅ Done |
-| High | **Integration Tests** | Add end-to-end workflow execution tests | Open |
+| High | **Integration Tests** | Add end-to-end workflow execution tests | ✅ Done |
 | Medium | **Provider Tests** | Improve coverage for engine providers (Gemini, Auggie, OpenCode) | Open |
 | Medium | **TUI Component Tests** | Add UI component testing with mock adapters | Open |
 
@@ -31,7 +31,7 @@ This document tracks planned improvements, enhancements, and technical debt item
 | Priority | Item | Description | Status |
 |----------|------|-------------|--------|
 | High | **Log Rotation** | Add log file size limits and automatic rotation in `src/agents/monitoring/logger.ts` | ✅ Done |
-| Medium | **Resume Support** | Implement consistent resume capability across all providers | Open |
+| Medium | **Resume Support** | Implement consistent resume capability across all providers | ✅ Done |
 | Medium | **Streaming Improvements** | Better progress indicators during long operations | Open |
 | Low | **Accessibility** | Add ARIA labels for TUI components | Open |
 
@@ -41,8 +41,8 @@ This document tracks planned improvements, enhancements, and technical debt item
 
 | Priority | Item | Description | Status |
 |----------|------|-------------|--------|
-| Medium | **Error Handling Standardization** | Standardize error handling patterns across all providers | Open |
-| Medium | **Singleton Safety** | Review singleton patterns for thread safety edge cases | Open |
+| Medium | **Error Handling Standardization** | Standardize error handling patterns across all providers (EngineError class exists in error-recovery.ts, providers need migration) | In Progress |
+| Medium | **Singleton Safety** | Review singleton patterns for thread safety edge cases | ✅ Done |
 | Medium | **Typed Event System** | Consider implementing typed event emitter pattern | Open |
 | Low | **Plugin Architecture** | Make engine providers more pluggable/extensible | Open |
 
@@ -72,8 +72,8 @@ This document tracks planned improvements, enhancements, and technical debt item
 
 | Priority | Item | Description | Status |
 |----------|------|-------------|--------|
-| Medium | **CI/CD Pipeline** | Set up automated testing on PRs | Open |
-| Medium | **Pre-commit Hooks** | Add lint and type-check before commits | Open |
+| Medium | **CI/CD Pipeline** | Set up automated testing on PRs | ✅ Done |
+| Medium | **Pre-commit Hooks** | Add lint and type-check before commits | ✅ Done |
 | Low | **Benchmarking** | Add performance regression tests | Open |
 
 ---

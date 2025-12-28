@@ -9,4 +9,5 @@ export const metadata: EngineMetadata = {
   installCommand: 'npm i -g opencode-ai@latest',
   defaultModel: 'opencode/big-pickle',
   order: 1,
+  supportsResume: true,
 };

@@ -83,8 +83,11 @@ function emitSpan(span: Span): void {
   for (const listener of spanListeners) {
     try {
       listener(span);
-    } catch {
-      // Ignore listener errors
+    } catch (listenerError) {
+      // Log listener errors at debug level
+      if (process.env.LOG_LEVEL === 'debug' || process.env.DEBUG) {
+        console.error('[DEBUG] Span listener error:', listenerError instanceof Error ? listenerError.message : listenerError);
+      }
     }
   }
 }

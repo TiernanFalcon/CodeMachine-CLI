@@ -306,8 +306,11 @@ function outputEntry(entry: LogEntry): void {
   for (const listener of listeners) {
     try {
       listener(entry);
-    } catch {
-      // Ignore listener errors
+    } catch (listenerError) {
+      // Log listener errors at debug level (avoid recursion by using console directly)
+      if (process.env.LOG_LEVEL === 'debug' || process.env.DEBUG) {
+        console.error('[DEBUG] Structured log listener error:', listenerError instanceof Error ? listenerError.message : listenerError);
+      }
     }
   }
 }

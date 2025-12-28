@@ -9,7 +9,8 @@ import * as logger from '../../shared/logging/logger.js';
  * Tracks all agent executions (workflow, CLI, orchestrated)
  */
 export class AgentMonitorService {
-  private static instance: AgentMonitorService;
+  private static instance: AgentMonitorService | null = null;
+  private static creating = false;
   private repository: AgentRepository;
 
   private constructor() {
@@ -20,12 +21,29 @@ export class AgentMonitorService {
 
   /**
    * Get singleton instance
+   * Uses a creation guard to prevent partial initialization if constructor throws
    */
   static getInstance(): AgentMonitorService {
     if (!AgentMonitorService.instance) {
-      AgentMonitorService.instance = new AgentMonitorService();
+      if (AgentMonitorService.creating) {
+        throw new Error('AgentMonitorService is being created - recursive getInstance() call detected');
+      }
+      AgentMonitorService.creating = true;
+      try {
+        AgentMonitorService.instance = new AgentMonitorService();
+      } finally {
+        AgentMonitorService.creating = false;
+      }
     }
     return AgentMonitorService.instance;
+  }
+
+  /**
+   * Reset singleton instance (for testing)
+   * @internal
+   */
+  static resetInstance(): void {
+    AgentMonitorService.instance = null;
   }
 
   /**

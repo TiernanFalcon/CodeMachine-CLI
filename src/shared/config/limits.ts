@@ -63,6 +63,23 @@ export const MAX_LINE_LENGTH = 2000;
  */
 export const MAX_FILE_READ_LINES = 2000;
 
+/**
+ * Maximum event history size for event bus
+ */
+export const MAX_EVENT_HISTORY_SIZE = 1000;
+
+/**
+ * Log rotation configuration
+ */
+export const LOG_ROTATION = {
+  /** Maximum log file size in bytes (10MB) */
+  MAX_SIZE_BYTES: 10 * 1024 * 1024,
+  /** Number of backup files to keep */
+  MAX_BACKUPS: 5,
+  /** Write count interval for rotation checks */
+  CHECK_INTERVAL: 100,
+} as const;
+
 // =============================================================================
 // Helper Functions
 // =============================================================================

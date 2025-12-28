@@ -35,6 +35,7 @@ interface RateLimitState {
  */
 export class RateLimitManager {
   private static instance: RateLimitManager | null = null;
+  private static creating = false;
   private entries: Map<string, RateLimitEntry> = new Map();
   private cmRoot: string;
   private persistPath: string;
@@ -47,13 +48,22 @@ export class RateLimitManager {
 
   /**
    * Get singleton instance
+   * Uses a creation guard to prevent partial initialization if constructor throws
    */
   static getInstance(cmRoot?: string): RateLimitManager {
     if (!RateLimitManager.instance) {
+      if (RateLimitManager.creating) {
+        throw new Error('RateLimitManager is being created - recursive getInstance() call detected');
+      }
       if (!cmRoot) {
         throw new Error('RateLimitManager requires cmRoot on first initialization');
       }
-      RateLimitManager.instance = new RateLimitManager(cmRoot);
+      RateLimitManager.creating = true;
+      try {
+        RateLimitManager.instance = new RateLimitManager(cmRoot);
+      } finally {
+        RateLimitManager.creating = false;
+      }
     }
     return RateLimitManager.instance;
   }

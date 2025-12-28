@@ -30,6 +30,8 @@ export interface EngineMetadata {
   experimental?: boolean;
   /** Optional icon for UI */
   icon?: string;
+  /** Whether this engine supports session resume */
+  supportsResume?: boolean;
 }
 
 /**

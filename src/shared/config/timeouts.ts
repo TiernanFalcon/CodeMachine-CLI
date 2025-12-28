@@ -93,6 +93,44 @@ export const SPINNER_INTERVAL_MS = 100;
  */
 export const LOG_STREAM_POLL_INTERVAL_MS = 500;
 
+/**
+ * Toast notification durations (ms)
+ */
+export const TOAST_DURATION = {
+  SHORT: 1500,
+  MEDIUM: 2000,
+  LONG: 3000,
+} as const;
+
+/**
+ * Dialog transition delays (ms)
+ */
+export const DIALOG_DELAY = {
+  QUICK: 500,
+  NORMAL: 800,
+  SLOW: 1500,
+  LONG: 2000,
+} as const;
+
+/**
+ * UI debounce/throttle delays (ms)
+ */
+export const UI_DELAY = {
+  TICK: 100,
+  DEBOUNCE: 200,
+  HISTORY_PAUSE: 2000,
+} as const;
+
+/**
+ * Resource monitor interval (ms)
+ */
+export const RESOURCE_MONITOR_INTERVAL_MS = 10000; // 10 seconds
+
+/**
+ * Health check timeout (ms)
+ */
+export const HEALTH_CHECK_TIMEOUT_MS = 10000;
+
 // =============================================================================
 // Cache TTLs
 // =============================================================================
