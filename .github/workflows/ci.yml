@@ -65,18 +65,17 @@ jobs:
           bun --version
           echo "Node version:"
           node --version
-          echo "=== Installed TypeScript package ==="
-          ls -la node_modules/typescript/bin/ || echo "No typescript bin found"
+          echo "=== Installed packages ==="
+          cat node_modules/typescript/package.json | grep version
+          cat node_modules/@types/bun/package.json | grep version || echo "No @types/bun"
+          echo "=== tsconfig.json skipLibCheck setting ==="
+          cat tsconfig.json | grep skipLibCheck
 
       - name: Run TypeScript type check
         run: |
           echo "=== Running tsc --noEmit ==="
-          npx tsc --noEmit 2>&1 || {
-            echo "=== TypeScript failed with exit code $? ==="
-            echo "=== Trying with diagnostics ==="
-            npx tsc --noEmit --extendedDiagnostics 2>&1 || true
-            exit 1
-          }
+          npx tsc --noEmit 2>&1
+          echo "=== TypeScript completed successfully ==="
 
   test:
     name: Test
