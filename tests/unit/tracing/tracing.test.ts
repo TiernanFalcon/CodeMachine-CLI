@@ -2,6 +2,8 @@
  * Request Tracing Unit Tests
  */
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import {
   generateCorrelationId,
@@ -179,7 +181,7 @@ describe('Trace Context', () => {
     });
 
     it('should propagate through async boundaries', async () => {
-      const context = createTraceContext('async-trace1');
+      const _context = createTraceContext('async-trace1');
 
       await withNewTraceAsync(async () => {
         await new Promise((resolve) => setTimeout(resolve, 10));
@@ -316,7 +318,7 @@ describe('Span', () => {
     });
 
     it('should finish span with status', () => {
-      const { span, finish } = startSpan('test');
+      const { span: _span, finish } = startSpan('test');
 
       const finished = finish('error', 'Something failed');
 

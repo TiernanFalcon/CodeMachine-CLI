@@ -1,6 +1,8 @@
-import { describe, it, expect, beforeEach, mock } from 'bun:test';
+import { describe, it, expect, beforeEach } from 'bun:test';
 import { WorkflowEventBus, createWorkflowEventBus } from '../event-bus.js';
 import type { WorkflowEvent } from '../types.js';
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 describe('WorkflowEventBus', () => {
   let bus: WorkflowEventBus;

@@ -14,7 +14,6 @@ import {
   SINGLE_STEP_WORKFLOW,
   SEQUENTIAL_WORKFLOW,
   PARALLEL_WORKFLOW,
-  type TestWorkflowScenario,
 } from '../../fixtures/workflow-scenarios.js';
 import { createMockEngine } from '../../fixtures/mock-engine.js';
 

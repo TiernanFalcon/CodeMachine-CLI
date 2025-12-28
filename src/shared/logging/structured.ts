@@ -5,8 +5,7 @@
  * and integration with the tracing system.
  */
 
-import { format as formatMessage } from 'node:util';
-import { getCorrelationId, getTraceContext } from '../tracing/context.js';
+import { getCorrelationId } from '../tracing/context.js';
 
 /**
  * Log levels

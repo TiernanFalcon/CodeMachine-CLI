@@ -2,6 +2,8 @@ import { describe, expect, it } from "bun:test"
 
 import { createOpenTUIAdapter, type UIActions } from "../../../../src/cli/tui/routes/workflow/adapters/opentui.js"
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 type RecordedActions = {
   workflowStatus: Array<Parameters<UIActions["setWorkflowStatus"]>[0]>
   addAgent: Array<Parameters<UIActions["addAgent"]>[0]>

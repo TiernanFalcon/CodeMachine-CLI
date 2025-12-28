@@ -193,7 +193,7 @@ export function parseControllerAction(output: string): 'NEXT' | 'SKIP' | 'STOP' 
  * - Status lines like "> OpenCode is analyzing..."
  */
 export function extractInputText(output: string): string {
-  let cleaned = output
+  const cleaned = output
     // Remove ACTION commands
     .replace(/ACTION:\s*(NEXT|SKIP|STOP)/g, '')
     // Remove color markers like [CYAN], [GREEN:BOLD], [GRAY], [RUNNING], etc.

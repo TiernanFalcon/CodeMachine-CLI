@@ -6,7 +6,6 @@
  */
 
 import { stat, access, constants } from 'node:fs/promises';
-import * as path from 'node:path';
 import { getCodemachinePaths, getCodemachineFiles } from '../../shared/config/paths.js';
 import { debug, info, warn, error as logError } from '../../shared/logging/logger.js';
 

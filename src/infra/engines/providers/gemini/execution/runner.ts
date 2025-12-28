@@ -45,7 +45,7 @@ export async function runGemini(options: EngineRunOptions): Promise<RunGeminiRes
   const modelId = model ?? metadata.defaultModel ?? 'gemini-2.0-flash-thinking-exp-01-21';
 
   const startTime = Date.now();
-  let lastUsage: GeminiUsageMetadata | undefined;
+  let _lastUsage: GeminiUsageMetadata | undefined;
   let fullOutput = '';
 
   try {
@@ -58,7 +58,7 @@ export async function runGemini(options: EngineRunOptions): Promise<RunGeminiRes
         onData?.(text);
       },
       onUsage: (usage) => {
-        lastUsage = usage;
+        _lastUsage = usage;
 
         // Emit telemetry update
         if (onTelemetry) {

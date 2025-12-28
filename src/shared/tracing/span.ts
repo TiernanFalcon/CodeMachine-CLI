@@ -9,7 +9,6 @@ import {
   getTraceContext,
   createChildContext,
   withTraceContext,
-  getCorrelationId,
 } from './context.js';
 
 /**

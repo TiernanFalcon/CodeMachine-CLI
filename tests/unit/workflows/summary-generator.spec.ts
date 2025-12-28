@@ -1,12 +1,10 @@
-import { describe, it, expect, beforeEach, afterEach, mock, spyOn } from 'bun:test';
-import { mkdtemp, rm, readFile, mkdir, writeFile } from 'node:fs/promises';
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
+import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   generateStepSummary,
   generateWorkflowSummary,
-  type GenerateStepSummaryOptions,
-  type GenerateWorkflowSummaryOptions
 } from '../../../src/workflows/execution/summary-generator.js';
 import type { WorkflowStep } from '../../../src/workflows/templates/types.js';
 import type { StepOutput } from '../../../src/workflows/state/types.js';

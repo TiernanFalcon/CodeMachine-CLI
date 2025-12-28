@@ -1,11 +1,10 @@
-import { describe, it, expect, beforeEach, afterEach, mock } from 'bun:test';
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   runWithFallback,
   hasAvailableEngine,
-  type RunWithFallbackOptions
 } from '../../../src/workflows/execution/engine-fallback.js';
 import { RateLimitManager } from '../../../src/workflows/execution/rate-limit-manager.js';
 import { registry } from '../../../src/infra/engines/index.js';

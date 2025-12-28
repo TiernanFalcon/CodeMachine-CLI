@@ -356,6 +356,7 @@ describe('createAdapter factory', () => {
   });
 
   it('should throw for unknown adapter type', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect(() => createAdapter('unknown' as any)).toThrow('Unknown adapter type');
   });
 });
