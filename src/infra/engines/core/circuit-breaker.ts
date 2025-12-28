@@ -382,8 +382,11 @@ export class CircuitBreaker {
     for (const listener of this.listeners) {
       try {
         listener(event);
-      } catch {
-        // Ignore listener errors
+      } catch (listenerError) {
+        // Log listener errors at debug level
+        if (process.env.LOG_LEVEL === 'debug' || process.env.DEBUG) {
+          console.error('[DEBUG] Circuit breaker listener error:', listenerError instanceof Error ? listenerError.message : listenerError);
+        }
       }
     }
   }

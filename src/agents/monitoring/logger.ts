@@ -23,7 +23,8 @@ const LOG_ROTATION = {
  * Creates individual log files and provides streaming interfaces
  */
 export class AgentLoggerService {
-  private static instance: AgentLoggerService;
+  private static instance: AgentLoggerService | null = null;
+  private static creating = false;
   private activeStreams: Map<number, WriteStream> = new Map();
   private lockService: LogLockService = new LogLockService();
   // Store full prompts temporarily (for debug mode logging) - cleared after stream creation
@@ -37,12 +38,29 @@ export class AgentLoggerService {
 
   /**
    * Get singleton instance
+   * Uses a creation guard to prevent partial initialization if constructor throws
    */
   static getInstance(): AgentLoggerService {
     if (!AgentLoggerService.instance) {
-      AgentLoggerService.instance = new AgentLoggerService();
+      if (AgentLoggerService.creating) {
+        throw new Error('AgentLoggerService is being created - recursive getInstance() call detected');
+      }
+      AgentLoggerService.creating = true;
+      try {
+        AgentLoggerService.instance = new AgentLoggerService();
+      } finally {
+        AgentLoggerService.creating = false;
+      }
     }
     return AgentLoggerService.instance;
+  }
+
+  /**
+   * Reset singleton instance (for testing)
+   * @internal
+   */
+  static resetInstance(): void {
+    AgentLoggerService.instance = null;
   }
 
   /**

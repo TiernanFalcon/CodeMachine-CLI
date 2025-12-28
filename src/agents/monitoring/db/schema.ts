@@ -45,7 +45,10 @@ export function initSchema(db: Database): void {
     if (!hasSessionId) {
       db.exec('ALTER TABLE agents ADD COLUMN session_id TEXT');
     }
-  } catch {
-    // Ignore errors - table might not exist yet (will be created by SCHEMA)
+  } catch (error) {
+    // Table might not exist yet (will be created by SCHEMA) - log at debug level
+    if (process.env.LOG_LEVEL === 'debug' || process.env.DEBUG) {
+      console.error('[DEBUG] Schema migration check:', error instanceof Error ? error.message : error);
+    }
   }
 }

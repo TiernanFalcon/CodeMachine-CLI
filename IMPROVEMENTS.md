@@ -41,8 +41,8 @@ This document tracks planned improvements, enhancements, and technical debt item
 
 | Priority | Item | Description | Status |
 |----------|------|-------------|--------|
-| Medium | **Error Handling Standardization** | Standardize error handling patterns across all providers | Open |
-| Medium | **Singleton Safety** | Review singleton patterns for thread safety edge cases | Open |
+| Medium | **Error Handling Standardization** | Standardize error handling patterns across all providers (EngineError class exists in error-recovery.ts, providers need migration) | In Progress |
+| Medium | **Singleton Safety** | Review singleton patterns for thread safety edge cases | ✅ Done |
 | Medium | **Typed Event System** | Consider implementing typed event emitter pattern | Open |
 | Low | **Plugin Architecture** | Make engine providers more pluggable/extensible | Open |
 
@@ -72,8 +72,8 @@ This document tracks planned improvements, enhancements, and technical debt item
 
 | Priority | Item | Description | Status |
 |----------|------|-------------|--------|
-| Medium | **CI/CD Pipeline** | Set up automated testing on PRs | Open |
-| Medium | **Pre-commit Hooks** | Add lint and type-check before commits | Open |
+| Medium | **CI/CD Pipeline** | Set up automated testing on PRs | ✅ Done |
+| Medium | **Pre-commit Hooks** | Add lint and type-check before commits | ✅ Done |
 | Low | **Benchmarking** | Add performance regression tests | Open |
 
 ---

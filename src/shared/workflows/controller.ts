@@ -167,8 +167,11 @@ export async function clearControllerConfig(cmRoot: string): Promise<void> {
     data.lastUpdated = new Date().toISOString();
 
     await writeFile(trackingPath, JSON.stringify(data, null, 2), 'utf8');
-  } catch {
-    // Ignore errors
+  } catch (error) {
+    // Log tracking update errors at debug level
+    if (process.env.LOG_LEVEL === 'debug' || process.env.DEBUG) {
+      console.error('[DEBUG] Failed to update template tracking:', error instanceof Error ? error.message : error);
+    }
   }
 }
 

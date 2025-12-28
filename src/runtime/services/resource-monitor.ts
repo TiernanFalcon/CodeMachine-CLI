@@ -353,7 +353,10 @@ export class ResourceMonitor {
       // Check thresholds
       this.checkThresholds(metrics);
     } catch (error) {
-      // Silently ignore collection errors
+      // Log collection errors at debug level - may occur during shutdown
+      if (process.env.LOG_LEVEL === 'debug' || process.env.DEBUG) {
+        console.error('[DEBUG] Resource collection error:', error instanceof Error ? error.message : error);
+      }
     }
   }
 
@@ -412,8 +415,11 @@ export class ResourceMonitor {
       for (const listener of listeners) {
         try {
           (listener as MonitorEventListener<T>)(data);
-        } catch {
-          // Ignore listener errors
+        } catch (listenerError) {
+          // Log listener errors at debug level to aid troubleshooting
+          if (process.env.LOG_LEVEL === 'debug' || process.env.DEBUG) {
+            console.error('[DEBUG] Resource monitor listener error:', listenerError instanceof Error ? listenerError.message : listenerError);
+          }
         }
       }
     }

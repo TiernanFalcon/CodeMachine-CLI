@@ -18,7 +18,8 @@ export interface CoordinatorOptions {
  * Coordinates parsing and execution of multi-agent coordination
  */
 export class CoordinatorService {
-  private static instance: CoordinatorService;
+  private static instance: CoordinatorService | null = null;
+  private static creating = false;
   private parser: CoordinatorParser;
 
   private constructor() {
@@ -28,12 +29,29 @@ export class CoordinatorService {
 
   /**
    * Get singleton instance
+   * Uses a creation guard to prevent partial initialization if constructor throws
    */
   static getInstance(): CoordinatorService {
     if (!CoordinatorService.instance) {
-      CoordinatorService.instance = new CoordinatorService();
+      if (CoordinatorService.creating) {
+        throw new Error('CoordinatorService is being created - recursive getInstance() call detected');
+      }
+      CoordinatorService.creating = true;
+      try {
+        CoordinatorService.instance = new CoordinatorService();
+      } finally {
+        CoordinatorService.creating = false;
+      }
     }
     return CoordinatorService.instance;
+  }
+
+  /**
+   * Reset singleton instance (for testing)
+   * @internal
+   */
+  static resetInstance(): void {
+    CoordinatorService.instance = null;
   }
 
   /**
