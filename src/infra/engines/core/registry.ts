@@ -5,7 +5,7 @@
  * fully loaded when actually accessed.
  */
 
-import type { EngineModule, EngineMetadata } from './base.js';
+import type { EngineModule, EngineMetadata, EnginePreviewMetadata } from './base.js';
 import { isEngineModule } from './base.js';
 
 /**
@@ -15,20 +15,21 @@ type EngineLoader = () => Promise<EngineModule>;
 
 /**
  * Lazy engine entry - stores loader and cached module
+ * Uses preview metadata until full module is loaded
  */
 interface LazyEngine {
-  metadata: EngineMetadata;
+  metadata: EnginePreviewMetadata | EngineMetadata;
   loader: EngineLoader;
   module?: EngineModule;
   loading?: Promise<EngineModule>;
 }
 
 /**
- * Engine metadata for lazy registration
+ * Preview metadata for lazy registration
  * Allows showing engine info without loading the full module
  * Note: supportsResume indicates if engine can continue from a previous session
  */
-const ENGINE_METADATA: EngineMetadata[] = [
+const ENGINE_METADATA: EnginePreviewMetadata[] = [
   { id: 'gemini', name: 'Gemini', order: 1, defaultModel: 'gemini-2.0-flash', supportsResume: false },
   { id: 'codex', name: 'Codex', order: 2, defaultModel: 'codex', supportsResume: true },
   { id: 'claude', name: 'Claude', order: 3, defaultModel: 'claude-sonnet-4-20250514', supportsResume: false },
@@ -72,8 +73,8 @@ class EngineRegistry {
 
     // Register all engines with their metadata and loaders
     for (const metadata of ENGINE_METADATA) {
-      const loader = ENGINE_LOADERS[metadata.id];
-      if (loader) {
+      const loader: EngineLoader | undefined = ENGINE_LOADERS[metadata.id];
+      if (loader !== undefined) {
         this.engines.set(metadata.id, { metadata, loader });
       }
     }
@@ -82,8 +83,9 @@ class EngineRegistry {
     if (process.env.CODEMACHINE_ENABLE_MOCK_ENGINE === '1') {
       const mockLoader = ENGINE_LOADERS['mock'];
       if (mockLoader) {
+        const mockPreview: EnginePreviewMetadata = { id: 'mock', name: 'Mock', order: 99 };
         this.engines.set('mock', {
-          metadata: { id: 'mock', name: 'Mock', order: 99 },
+          metadata: mockPreview,
           loader: mockLoader,
         });
       }
@@ -217,8 +219,9 @@ class EngineRegistry {
 
   /**
    * Get all engine metadata (no loading required)
+   * Returns preview metadata for unloaded engines, full metadata for loaded ones
    */
-  getAllMetadata(): EngineMetadata[] {
+  getAllMetadata(): (EnginePreviewMetadata | EngineMetadata)[] {
     return Array.from(this.engines.values())
       .map((entry) => entry.metadata)
       .sort((a, b) => (a.order ?? 99) - (b.order ?? 99));

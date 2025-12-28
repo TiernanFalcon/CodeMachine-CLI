@@ -7,16 +7,29 @@
 import { CodeMachineError } from './base.js';
 
 /**
+ * Database error codes - union of all possible database error types
+ */
+export type DatabaseErrorCode =
+  | 'DATABASE_ERROR'
+  | 'DATABASE_BUSY'
+  | 'DATABASE_LOCKED'
+  | 'RECORD_NOT_FOUND'
+  | 'DATABASE_CONNECTION_FAILED'
+  | 'DATABASE_MIGRATION_FAILED'
+  | 'TRANSACTION_FAILED';
+
+/**
  * Base class for all database errors
  */
 export class DatabaseError extends CodeMachineError {
-  readonly code = 'DATABASE_ERROR';
+  declare readonly code: DatabaseErrorCode;
 
   constructor(
     message: string,
     options?: { cause?: Error; recoverable?: boolean }
   ) {
     super(message, options);
+    (this as { code: DatabaseErrorCode }).code = 'DATABASE_ERROR';
   }
 }
 
@@ -25,7 +38,7 @@ export class DatabaseError extends CodeMachineError {
  * This error is recoverable - retry with backoff
  */
 export class DatabaseBusyError extends DatabaseError {
-  readonly code = 'DATABASE_BUSY';
+  declare readonly code: 'DATABASE_BUSY';
 
   constructor(operation?: string, cause?: Error) {
     const op = operation ? ` during ${operation}` : '';
@@ -33,6 +46,7 @@ export class DatabaseBusyError extends DatabaseError {
       cause,
       recoverable: true,
     });
+    (this as { code: 'DATABASE_BUSY' }).code = 'DATABASE_BUSY';
   }
 
   /**
@@ -55,13 +69,14 @@ export class DatabaseBusyError extends DatabaseError {
  * Database locked (SQLITE_LOCKED)
  */
 export class DatabaseLockedError extends DatabaseError {
-  readonly code = 'DATABASE_LOCKED';
+  declare readonly code: 'DATABASE_LOCKED';
 
   constructor(cause?: Error) {
     super('Database is locked by another connection', {
       cause,
       recoverable: true,
     });
+    (this as { code: 'DATABASE_LOCKED' }).code = 'DATABASE_LOCKED';
   }
 }
 
@@ -69,12 +84,13 @@ export class DatabaseLockedError extends DatabaseError {
  * Record not found
  */
 export class RecordNotFoundError extends DatabaseError {
-  readonly code = 'RECORD_NOT_FOUND';
+  declare readonly code: 'RECORD_NOT_FOUND';
   readonly table: string;
   readonly id: string | number;
 
   constructor(table: string, id: string | number) {
     super(`Record not found in ${table}: ${id}`);
+    (this as { code: 'RECORD_NOT_FOUND' }).code = 'RECORD_NOT_FOUND';
     this.table = table;
     this.id = id;
   }
@@ -84,7 +100,7 @@ export class RecordNotFoundError extends DatabaseError {
  * Database connection failed
  */
 export class DatabaseConnectionError extends DatabaseError {
-  readonly code = 'DATABASE_CONNECTION_FAILED';
+  declare readonly code: 'DATABASE_CONNECTION_FAILED';
   readonly dbPath: string;
 
   constructor(dbPath: string, cause?: Error) {
@@ -92,6 +108,7 @@ export class DatabaseConnectionError extends DatabaseError {
       cause,
       recoverable: false,
     });
+    (this as { code: 'DATABASE_CONNECTION_FAILED' }).code = 'DATABASE_CONNECTION_FAILED';
     this.dbPath = dbPath;
   }
 }
@@ -100,13 +117,14 @@ export class DatabaseConnectionError extends DatabaseError {
  * Database migration failed
  */
 export class DatabaseMigrationError extends DatabaseError {
-  readonly code = 'DATABASE_MIGRATION_FAILED';
+  declare readonly code: 'DATABASE_MIGRATION_FAILED';
 
   constructor(version: string | number, cause?: Error) {
     super(`Database migration failed at version ${version}`, {
       cause,
       recoverable: false,
     });
+    (this as { code: 'DATABASE_MIGRATION_FAILED' }).code = 'DATABASE_MIGRATION_FAILED';
   }
 }
 
@@ -114,12 +132,13 @@ export class DatabaseMigrationError extends DatabaseError {
  * Transaction failed
  */
 export class TransactionError extends DatabaseError {
-  readonly code = 'TRANSACTION_FAILED';
+  declare readonly code: 'TRANSACTION_FAILED';
 
   constructor(operation: string, cause?: Error) {
     super(`Transaction failed during ${operation}`, {
       cause,
       recoverable: true,
     });
+    (this as { code: 'TRANSACTION_FAILED' }).code = 'TRANSACTION_FAILED';
   }
 }

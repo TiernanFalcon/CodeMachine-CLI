@@ -35,6 +35,23 @@ export interface EngineMetadata {
 }
 
 /**
+ * Minimal engine metadata for lazy loading preview
+ * Contains only the essential fields needed before full engine load
+ */
+export interface EnginePreviewMetadata {
+  /** Unique identifier for the engine */
+  id: string;
+  /** Display name */
+  name: string;
+  /** Display order in UI (lower = first) */
+  order?: number;
+  /** Default model to use */
+  defaultModel?: string;
+  /** Whether this engine supports session resume */
+  supportsResume?: boolean;
+}
+
+/**
  * Authentication module interface - all engines must implement these
  */
 export interface EngineAuthModule {

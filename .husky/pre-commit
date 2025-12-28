@@ -1,12 +1,9 @@
-#!/bin/sh
-. "$(dirname "$0")/_/husky.sh"
-
 # Run type checking
 echo "🔍 Running type check..."
 npx tsc --noEmit || exit 1
 
-# Run linting on staged files using lint-staged
+# Run linting on staged files
 echo "🧹 Running lint on staged files..."
-npx lint-staged || exit 1
+npx eslint --max-warnings=0 $(git diff --cached --name-only --diff-filter=ACM -- '*.ts' '*.tsx' 2>/dev/null || echo "") || exit 1
 
 echo "✅ Pre-commit checks passed!"

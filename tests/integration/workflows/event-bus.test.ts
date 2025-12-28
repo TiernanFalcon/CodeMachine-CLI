@@ -19,7 +19,8 @@ describe('Event Bus Integration', () => {
     it('should notify subscribers on event emission', () => {
       const received: WorkflowEvent[] = [];
 
-      eventBus.subscribe('step:start', (event) => {
+      // Use 'on' method for typed subscription
+      eventBus.on('step:start', (event) => {
         received.push(event);
       });
 
@@ -37,9 +38,9 @@ describe('Event Bus Integration', () => {
     it('should support multiple subscribers for same event', () => {
       let count = 0;
 
-      eventBus.subscribe('workflow:start', () => count++);
-      eventBus.subscribe('workflow:start', () => count++);
-      eventBus.subscribe('workflow:start', () => count++);
+      eventBus.on('workflow:start', () => count++);
+      eventBus.on('workflow:start', () => count++);
+      eventBus.on('workflow:start', () => count++);
 
       eventBus.emit({
         type: 'workflow:start',
@@ -53,7 +54,7 @@ describe('Event Bus Integration', () => {
     it('should unsubscribe correctly', () => {
       let count = 0;
 
-      const unsubscribe = eventBus.subscribe('step:complete', () => count++);
+      const unsubscribe = eventBus.on('step:complete', () => count++);
 
       eventBus.emit({
         type: 'step:complete',
@@ -80,10 +81,11 @@ describe('Event Bus Integration', () => {
   });
 
   describe('Wildcard Subscription', () => {
-    it('should receive all events with * subscription', () => {
+    it('should receive all events with subscribe method', () => {
       const received: WorkflowEvent[] = [];
 
-      eventBus.subscribe('*', (event) => {
+      // subscribe() without event type receives all events
+      eventBus.subscribe((event) => {
         received.push(event);
       });
 
@@ -152,8 +154,11 @@ describe('Event Bus Integration', () => {
 
       expect(history).toHaveLength(3);
       // Should keep the last 3 events
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       expect((history[0] as any).stepIndex).toBe(2);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       expect((history[1] as any).stepIndex).toBe(3);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       expect((history[2] as any).stepIndex).toBe(4);
     });
 
@@ -181,7 +186,7 @@ describe('Event Bus Integration', () => {
         success: true,
       });
 
-      const stepEvents = eventBus.getHistory('step:start');
+      const stepEvents = eventBus.getHistoryByType('step:start');
 
       expect(stepEvents).toHaveLength(1);
       expect(stepEvents[0].type).toBe('step:start');
@@ -208,11 +213,11 @@ describe('Event Bus Integration', () => {
     it('should continue emitting when subscriber throws', () => {
       let secondCalled = false;
 
-      eventBus.subscribe('step:start', () => {
+      eventBus.on('step:start', () => {
         throw new Error('Subscriber error');
       });
 
-      eventBus.subscribe('step:start', () => {
+      eventBus.on('step:start', () => {
         secondCalled = true;
       });
 

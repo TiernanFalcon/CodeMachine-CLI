@@ -4,12 +4,13 @@
  * Visual styling and text generation for the PromptLine component.
  */
 
+import type { RGBA } from "@opentui/core"
 import type { PromptLineState } from "./prompt-line.js"
 
 export interface Theme {
-  textMuted: number
-  warning: number
-  primary: number
+  textMuted: RGBA
+  warning: RGBA
+  primary: RGBA
 }
 
 /**
@@ -24,7 +25,7 @@ export function getPromptSymbol(state: PromptLineState): string {
 /**
  * Get the color for the prompt symbol
  */
-export function getSymbolColor(state: PromptLineState, theme: Theme): number {
+export function getSymbolColor(state: PromptLineState, theme: Theme): RGBA {
   if (state.mode === "disabled") return theme.textMuted
   if (state.mode === "active" && state.reason === "paused") return theme.warning
   return theme.primary

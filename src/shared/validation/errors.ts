@@ -5,10 +5,18 @@
 import { CodeMachineError } from '../errors/base.js';
 
 /**
+ * Validation error codes for this module
+ */
+export type LocalValidationErrorCode =
+  | 'VALIDATION_ERROR'
+  | 'PATH_VALIDATION_ERROR'
+  | 'CONFIG_VALIDATION_ERROR';
+
+/**
  * Base validation error
  */
 export class ValidationError extends CodeMachineError {
-  readonly code = 'VALIDATION_ERROR';
+  declare readonly code: LocalValidationErrorCode;
   readonly recoverable = false;
 
   constructor(
@@ -17,7 +25,8 @@ export class ValidationError extends CodeMachineError {
     public readonly value?: unknown,
     cause?: Error
   ) {
-    super(message, cause);
+    super(message, { cause });
+    (this as { code: LocalValidationErrorCode }).code = 'VALIDATION_ERROR';
   }
 
   static invalidType(field: string, expected: string, received: string): ValidationError {
@@ -44,7 +53,7 @@ export class ValidationError extends CodeMachineError {
  * Path validation error
  */
 export class PathValidationError extends ValidationError {
-  readonly code = 'PATH_VALIDATION_ERROR';
+  declare readonly code: 'PATH_VALIDATION_ERROR';
 
   constructor(
     message: string,
@@ -52,6 +61,7 @@ export class PathValidationError extends ValidationError {
     cause?: Error
   ) {
     super(message, 'path', path, cause);
+    (this as { code: 'PATH_VALIDATION_ERROR' }).code = 'PATH_VALIDATION_ERROR';
   }
 
   static notFound(path: string): PathValidationError {
@@ -75,7 +85,7 @@ export class PathValidationError extends ValidationError {
  * Configuration validation error
  */
 export class ConfigValidationError extends ValidationError {
-  readonly code = 'CONFIG_VALIDATION_ERROR';
+  declare readonly code: 'CONFIG_VALIDATION_ERROR';
 
   constructor(
     message: string,
@@ -85,6 +95,7 @@ export class ConfigValidationError extends ValidationError {
     cause?: Error
   ) {
     super(message, field, value, cause);
+    (this as { code: 'CONFIG_VALIDATION_ERROR' }).code = 'CONFIG_VALIDATION_ERROR';
   }
 
   static invalidSchema(configFile: string, errors: string[]): ConfigValidationError {

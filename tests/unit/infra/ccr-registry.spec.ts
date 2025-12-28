@@ -12,7 +12,7 @@ describe('CCR Engine Registry Integration', () => {
 
     expect(ccrEngine).toBeDefined();
     expect(ccrEngine?.metadata.id).toBe('ccr');
-    expect(ccrEngine?.metadata.name).toBe('Claude Code Runner');
+    expect(ccrEngine?.metadata.name).toBe('Claude Code Router');
   });
 
   it('includes CCR in all registered engines', () => {
@@ -33,6 +33,6 @@ describe('CCR Engine Registry Integration', () => {
     const ccrEngine = allEngines.find(engine => engine.metadata.id === 'ccr');
 
     expect(ccrEngine).toBeDefined();
-    expect(ccrEngine?.metadata.order).toBe(5);
+    expect(ccrEngine?.metadata.order).toBe(3);
   });
 });

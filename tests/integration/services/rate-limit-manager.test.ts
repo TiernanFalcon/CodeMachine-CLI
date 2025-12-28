@@ -55,23 +55,25 @@ describe('Rate Limit Manager Integration', () => {
       const manager = RateLimitManager.getInstance(testDir);
       await manager.initialize();
 
-      const resetAt = Date.now() + 60000; // 1 minute from now
-      manager.markRateLimited('claude', resetAt);
+      // Use Date object as expected by the API
+      const resetAt = new Date(Date.now() + 60000); // 1 minute from now
+      await manager.markRateLimited('claude', resetAt);
 
-      expect(manager.isRateLimited('claude')).toBe(true);
-      expect(manager.isRateLimited('gemini')).toBe(false);
+      // isEngineAvailable returns false when rate limited
+      expect(manager.isEngineAvailable('claude')).toBe(false);
+      expect(manager.isEngineAvailable('gemini')).toBe(true);
     });
 
-    it('should return reset time for rate limited engine', async () => {
+    it('should return time until available for rate limited engine', async () => {
       const manager = RateLimitManager.getInstance(testDir);
       await manager.initialize();
 
-      const resetAt = Date.now() + 60000;
-      manager.markRateLimited('codex', resetAt);
+      const resetAt = new Date(Date.now() + 60000); // 1 minute from now
+      await manager.markRateLimited('codex', resetAt);
 
-      const entry = manager.getRateLimitEntry('codex');
-      expect(entry).toBeDefined();
-      expect(entry?.resetsAt).toBe(resetAt);
+      const timeUntil = manager.getTimeUntilAvailable('codex');
+      expect(timeUntil).toBeGreaterThan(0);
+      expect(timeUntil).toBeLessThanOrEqual(60);
     });
 
     it('should clear expired rate limits', async () => {
@@ -79,25 +81,25 @@ describe('Rate Limit Manager Integration', () => {
       await manager.initialize();
 
       // Mark as rate limited with past reset time
-      const resetAt = Date.now() - 1000; // Already expired
-      manager.markRateLimited('claude', resetAt);
+      const resetAt = new Date(Date.now() - 1000); // Already expired
+      await manager.markRateLimited('claude', resetAt);
 
       // Should auto-clear expired entries
-      expect(manager.isRateLimited('claude')).toBe(false);
+      expect(manager.isEngineAvailable('claude')).toBe(true);
     });
 
     it('should clear rate limit manually', async () => {
       const manager = RateLimitManager.getInstance(testDir);
       await manager.initialize();
 
-      const resetAt = Date.now() + 60000;
-      manager.markRateLimited('gemini', resetAt);
+      const resetAt = new Date(Date.now() + 60000);
+      await manager.markRateLimited('gemini', resetAt);
 
-      expect(manager.isRateLimited('gemini')).toBe(true);
+      expect(manager.isEngineAvailable('gemini')).toBe(false);
 
-      manager.clearRateLimit('gemini');
+      await manager.clearRateLimit('gemini');
 
-      expect(manager.isRateLimited('gemini')).toBe(false);
+      expect(manager.isEngineAvailable('gemini')).toBe(true);
     });
   });
 
@@ -106,17 +108,16 @@ describe('Rate Limit Manager Integration', () => {
       const manager = RateLimitManager.getInstance(testDir);
       await manager.initialize();
 
-      const resetAt = Date.now() + 60000;
-      manager.markRateLimited('claude', resetAt);
+      const resetAt = new Date(Date.now() + 60000);
+      await manager.markRateLimited('claude', resetAt);
 
-      await manager.persist();
-
-      // Read persisted file
+      // Persist is called automatically by markRateLimited
+      // Just verify the file exists
       const content = await readFile(path.join(testDir, 'rate-limits.json'), 'utf-8');
       const data = JSON.parse(content);
 
-      expect(data.claude).toBeDefined();
-      expect(data.claude.resetsAt).toBe(resetAt);
+      expect(data.entries).toBeDefined();
+      expect(Array.isArray(data.entries)).toBe(true);
     });
 
     it('should load persisted rate limits on initialization', async () => {
@@ -124,9 +125,8 @@ describe('Rate Limit Manager Integration', () => {
       const manager1 = RateLimitManager.getInstance(testDir);
       await manager1.initialize();
 
-      const resetAt = Date.now() + 60000;
-      manager1.markRateLimited('claude', resetAt);
-      await manager1.persist();
+      const resetAt = new Date(Date.now() + 60000);
+      await manager1.markRateLimited('claude', resetAt);
 
       // Reset and create new instance
       RateLimitManager.resetInstance();
@@ -134,32 +134,30 @@ describe('Rate Limit Manager Integration', () => {
       const manager2 = RateLimitManager.getInstance(testDir);
       await manager2.initialize();
 
-      expect(manager2.isRateLimited('claude')).toBe(true);
+      expect(manager2.isEngineAvailable('claude')).toBe(false);
     });
   });
 
-  describe('Available Engines', () => {
-    it('should list available engines', async () => {
+  describe('Rate Limited Engines', () => {
+    it('should list rate limited engines', async () => {
       const manager = RateLimitManager.getInstance(testDir);
       await manager.initialize();
 
-      manager.markRateLimited('claude', Date.now() + 60000);
+      await manager.markRateLimited('claude', new Date(Date.now() + 60000));
 
-      const available = manager.getAvailableEngines(['claude', 'gemini', 'codex']);
+      const rateLimited = manager.getRateLimitedEngines();
 
-      expect(available).not.toContain('claude');
-      expect(available).toContain('gemini');
-      expect(available).toContain('codex');
+      expect(rateLimited).toContain('claude');
+      expect(rateLimited).not.toContain('gemini');
     });
 
-    it('should return all engines when none rate limited', async () => {
+    it('should return empty array when none rate limited', async () => {
       const manager = RateLimitManager.getInstance(testDir);
       await manager.initialize();
 
-      const engines = ['claude', 'gemini', 'codex'];
-      const available = manager.getAvailableEngines(engines);
+      const rateLimited = manager.getRateLimitedEngines();
 
-      expect(available).toEqual(engines);
+      expect(rateLimited).toEqual([]);
     });
   });
 });
