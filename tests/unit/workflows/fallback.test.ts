@@ -1,3 +1,4 @@
+// eslint-disable-next-line import/no-unresolved
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { WorkflowStep } from '../../../src/workflows/templates/index.js';
 

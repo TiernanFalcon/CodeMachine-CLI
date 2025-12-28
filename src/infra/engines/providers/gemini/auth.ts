@@ -1,5 +1,4 @@
-import { stat, rm, writeFile, mkdir, readFile } from 'node:fs/promises';
-import * as path from 'node:path';
+import { rm, writeFile, mkdir, readFile } from 'node:fs/promises';
 
 import { resolveGeminiConfigDir, getApiKeyPath } from './config.js';
 import { metadata } from './metadata.js';

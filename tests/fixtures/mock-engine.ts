@@ -50,7 +50,7 @@ export function createMockEngine(options: MockEngineOptions = {}): EngineModule 
       nextAuthMenuAction: async () => (authenticated ? 'logout' : 'login'),
     },
 
-    run: async function* (options) {
+    run: async function* (_options) {
       const currentCall = callCount++;
 
       // Check if we should throw an error
@@ -155,9 +155,9 @@ export function createRateLimitedMockEngine(rateLimitAfterCalls: number): Engine
       callCount++;
 
       if (callCount > rateLimitAfterCalls) {
-        const error = new Error('Rate limit exceeded');
-        (error as any).code = 'RATE_LIMIT';
-        (error as any).retryAfter = 60;
+        const error = new Error('Rate limit exceeded') as Error & { code?: string; retryAfter?: number };
+        error.code = 'RATE_LIMIT';
+        error.retryAfter = 60;
         throw error;
       }
 

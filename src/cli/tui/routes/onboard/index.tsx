@@ -34,7 +34,7 @@ export function Onboard(props: OnboardProps) {
   const [projectName, setProjectName] = createSignal("")
   const [selectedTrackId, setSelectedTrackId] = createSignal<string | undefined>()
   const [selectedConditions, setSelectedConditions] = createSignal<Set<string>>(new Set())
-  const [selectedControllerId, setSelectedControllerId] = createSignal<string | undefined>()
+  const [_selectedControllerId, setSelectedControllerId] = createSignal<string | undefined>()
 
   const hasTracks = () => props.tracks && Object.keys(props.tracks).length > 0
   const hasConditions = () => props.conditions && Object.keys(props.conditions).length > 0
@@ -84,7 +84,7 @@ export function Onboard(props: OnboardProps) {
 
   // Typing effect - reset when step changes
   createEffect(() => {
-    const step = currentStep()
+    const _step = currentStep()
     const question = currentQuestion()
     setTypedText("")
     setTypingDone(false)
@@ -295,7 +295,7 @@ export function Onboard(props: OnboardProps) {
 
           <Show when={currentStep() === 'tracks'}>
             <For each={trackEntries()}>
-              {([trackId, config], index) => {
+              {([_trackId, config], index) => {
                 const isSelected = () => index() === selectedIndex()
                 return (
                   <box flexDirection="column">
@@ -352,7 +352,7 @@ export function Onboard(props: OnboardProps) {
 
           <Show when={currentStep() === 'controller'}>
             <For each={controllerEntries()}>
-              {([controllerId, agent], index) => {
+              {([controllerId, _agent], index) => {
                 const isSelected = () => index() === selectedIndex()
                 return (
                   <box flexDirection="column">

@@ -18,7 +18,6 @@ import type { WorkflowEventEmitter } from '../events/index.js';
 import {
   createWorkflowMachine,
   type StateMachine,
-  type WorkflowContext,
   type StepOutput,
 } from '../state/index.js';
 import {
@@ -39,7 +38,6 @@ import {
   markChainCompleted,
   markStepCompleted,
   getStepData,
-  getChainResumeInfo,
 } from '../../shared/workflows/steps.js';
 import { generateStepSummary, generateWorkflowSummary } from './summary-generator.js';
 
@@ -227,7 +225,7 @@ export class WorkflowRunner {
     // Main loop
     while (!this.machine.isFinal) {
       const state = this.machine.state;
-      const ctx = this.machine.context;
+      const _ctx = this.machine.context;
 
       if (state === 'running') {
         await this.executeCurrentStep();

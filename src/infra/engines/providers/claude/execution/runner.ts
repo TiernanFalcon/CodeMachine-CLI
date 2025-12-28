@@ -111,7 +111,7 @@ function formatStreamJsonLine(line: string): string | null {
       const totalIn = json.usage.input_tokens + totalCached;
 
       // Show total input tokens with optional cached indicator
-      const tokensDisplay = totalCached > 0
+      const _tokensDisplay = totalCached > 0
         ? `${totalIn}in/${json.usage.output_tokens}out (${totalCached} cached)`
         : `${totalIn}in/${json.usage.output_tokens}out`;
 

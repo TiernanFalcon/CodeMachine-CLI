@@ -4,8 +4,9 @@
  * Always returns authenticated for testing purposes.
  */
 
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface MockAuthOptions {
-  // No options needed
+  // No options needed - interface kept for API consistency
 }
 
 /**

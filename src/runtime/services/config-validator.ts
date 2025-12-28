@@ -15,8 +15,6 @@ import {
 import {
   validateFilePath,
   validateDirectoryPath,
-  validatePositiveInteger,
-  validateNonEmptyString,
 } from '../../shared/validation/validators.js';
 import {
   ValidationError,

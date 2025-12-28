@@ -142,7 +142,7 @@ export function validateAbsolutePath(value: unknown, fieldName: string): Validat
  */
 export async function validatePathExists(
   pathValue: string,
-  fieldName: string = 'path'
+  _fieldName: string = 'path'
 ): Promise<ValidationResult<string>> {
   try {
     await stat(pathValue);
@@ -157,7 +157,7 @@ export async function validatePathExists(
  */
 export async function validatePathReadable(
   pathValue: string,
-  fieldName: string = 'path'
+  _fieldName: string = 'path'
 ): Promise<ValidationResult<string>> {
   try {
     await access(pathValue, constants.R_OK);
@@ -172,7 +172,7 @@ export async function validatePathReadable(
  */
 export async function validatePathWritable(
   pathValue: string,
-  fieldName: string = 'path'
+  _fieldName: string = 'path'
 ): Promise<ValidationResult<string>> {
   try {
     await access(pathValue, constants.W_OK);

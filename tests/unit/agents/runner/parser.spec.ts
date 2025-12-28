@@ -3,8 +3,6 @@ import {
   parseToolUse,
   extractContextFromTool,
   extractGoal,
-  type ToolUse,
-  type ToolContext
 } from '../../../../src/agents/runner/parser.js';
 
 // Helper to build XML tool invocations without triggering tool parsing
