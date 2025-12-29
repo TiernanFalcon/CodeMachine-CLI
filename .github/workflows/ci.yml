@@ -69,7 +69,20 @@ jobs:
           cat tsconfig.json
 
       - name: Run TypeScript type check
-        run: bun run typecheck
+        run: |
+          echo "=== Starting TypeScript check ==="
+          echo "Current directory: $(pwd)"
+          echo "Files in current directory:"
+          ls -la
+          echo "=== Running bun run typecheck ==="
+          bun run typecheck 2>&1 || {
+            EXIT_CODE=$?
+            echo "=== TypeScript check FAILED with exit code $EXIT_CODE ==="
+            echo "=== Trying direct tsc to compare ==="
+            node ./node_modules/typescript/bin/tsc --noEmit 2>&1 || echo "Direct tsc also failed with exit code $?"
+            exit $EXIT_CODE
+          }
+          echo "=== TypeScript check PASSED ==="
 
   test:
     name: Test
