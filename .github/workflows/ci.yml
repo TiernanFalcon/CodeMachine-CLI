@@ -69,7 +69,7 @@ jobs:
           cat tsconfig.json
 
       - name: Run TypeScript type check
-        run: ./node_modules/.bin/tsc --noEmit
+        run: bun run typecheck
 
   test:
     name: Test
