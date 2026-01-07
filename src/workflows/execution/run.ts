@@ -129,12 +129,22 @@ export async function runWorkflow(options: RunWorkflowOptions = {}): Promise<voi
   const selectedConditions = await getSelectedConditions(cmRoot);
 
   // Filter steps by track and conditions
+  // Supports inverse conditions with ! prefix (e.g., '!simple_mode' means "run if simple_mode is NOT selected")
   const visibleSteps = template.steps.filter(step => {
     if (step.type !== 'module') return true;
     if (step.tracks?.length && selectedTrack && !step.tracks.includes(selectedTrack)) return false;
     if (step.conditions?.length) {
-      const missing = step.conditions.filter(c => !(selectedConditions ?? []).includes(c));
-      if (missing.length > 0) return false;
+      const selected = selectedConditions ?? [];
+      for (const cond of step.conditions) {
+        if (cond.startsWith('!')) {
+          // Inverse condition: step runs only if this condition is NOT selected
+          const inverseCond = cond.slice(1);
+          if (selected.includes(inverseCond)) return false;
+        } else {
+          // Normal condition: step runs only if this condition IS selected
+          if (!selected.includes(cond)) return false;
+        }
+      }
     }
     return true;
   });

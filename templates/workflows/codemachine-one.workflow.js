@@ -1,10 +1,19 @@
 export default {
   name: 'CodeMachine-One Workflow',
+  controller: true, // Enable autonomous mode (Shift+Tab)
+
+  conditions: {
+    simple_mode: {
+      label: 'Simple Mode',
+      description: 'Skips architecture sub-agents to reduce tokens. Use for small/simple projects.'
+    }
+  },
+
   steps: [
     resolveStep('init', { executeOnce: true }), // Initialize development environment
     resolveStep('principal-analyst', { executeOnce: true }), // Review specifications and identify critical ambiguities
     resolveUI("∴ Planning Phase ∴"),
-    resolveStep('blueprint-orchestrator', { executeOnce: true }), // Orchestrate architecture blueprint generation
+    resolveStep('blueprint-orchestrator', { executeOnce: true, conditions: ['!simple_mode'] }), // Orchestrate architecture blueprint generation (skipped in simple mode)
     resolveStep('plan-agent', { executeOnce: true, notCompletedFallback: 'plan-fallback' }), // Generate comprehensive iterative development plan with architectural artifacts
     resolveStep('task-breakdown', { executeOnce: true }), // Extract and structure tasks from project plan into JSON format
     resolveStep('git-commit', { executeOnce: true }), // Commit the task breakdown to git
@@ -18,7 +27,7 @@ export default {
     resolveModule('check-task', { loopSteps: 6, loopMaxIterations: 20,  loopSkip: ['runtime-prep']  }), // Loop back if tasks are not completed
   ],
   subAgentIds: [
-    // architecture sub-agents
+    // architecture sub-agents (only used when not in simple mode)
     'founder-architect',
     'structural-data-architect',
     'behavior-architect',
