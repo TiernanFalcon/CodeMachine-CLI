@@ -1,4 +1,4 @@
-import { registry } from '../../infra/engines/index.js';
+import { registry, engineAuthCache } from '../../infra/engines/index.js';
 import { debug } from '../../shared/logging/logger.js';
 import type { WorkflowEventEmitter } from '../events/index.js';
 import {
@@ -8,6 +8,9 @@ import {
   isFallbackEnabled,
   type EngineConfigFile,
 } from './engine-presets.js';
+
+// Re-export for backwards compatibility (deprecated - use engineAuthCache from infra/engines instead)
+export { EngineAuthCache, engineAuthCache as authCache } from '../../infra/engines/index.js';
 
 // Module-level config file cache (loaded once per workflow)
 let cachedConfigFile: EngineConfigFile | null = null;
@@ -25,56 +28,6 @@ export function setEngineConfigFile(config: EngineConfigFile | null): void {
 export function clearEngineConfigFile(): void {
   cachedConfigFile = null;
 }
-
-/**
- * Cache for engine authentication status with TTL
- * Prevents repeated auth checks (which can take 10-30 seconds)
- */
-export class EngineAuthCache {
-  private cache: Map<string, { isAuthenticated: boolean; timestamp: number }> = new Map();
-  private ttlMs: number = 5 * 60 * 1000; // 5 minutes TTL
-
-  /**
-   * Check if engine is authenticated (with caching)
-   */
-  async isAuthenticated(engineId: string, checkFn: () => Promise<boolean>): Promise<boolean> {
-    const cached = this.cache.get(engineId);
-    const now = Date.now();
-
-    // Return cached value if still valid
-    if (cached && (now - cached.timestamp) < this.ttlMs) {
-      return cached.isAuthenticated;
-    }
-
-    // Cache miss or expired - perform actual check
-    const result = await checkFn();
-
-    // Cache the result
-    this.cache.set(engineId, {
-      isAuthenticated: result,
-      timestamp: now
-    });
-
-    return result;
-  }
-
-  /**
-   * Invalidate cache for specific engine
-   */
-  invalidate(engineId: string): void {
-    this.cache.delete(engineId);
-  }
-
-  /**
-   * Clear entire cache
-   */
-  clear(): void {
-    this.cache.clear();
-  }
-}
-
-// Global auth cache instance
-export const authCache = new EngineAuthCache();
 
 interface StepWithEngine {
   engine?: string;
@@ -109,7 +62,7 @@ export async function selectEngine(
     debug(`[DEBUG workflow] Preset/override engine for ${step.agentId}: ${presetEngine}`);
     const presetEngineModule = await registry.getAsync(presetEngine);
     const isPresetAuthed = presetEngineModule
-      ? await authCache.isAuthenticated(presetEngineModule.metadata.id, () => presetEngineModule.auth.isAuthenticated())
+      ? await engineAuthCache.isAuthenticated(presetEngineModule.metadata.id, () => presetEngineModule.auth.isAuthenticated())
       : false;
 
     if (isPresetAuthed) {
@@ -138,7 +91,7 @@ export async function selectEngine(
     const overrideEngine = await registry.getAsync(engineType);
     debug(`[DEBUG workflow] Checking auth for override engine...`);
     const isOverrideAuthed = overrideEngine
-      ? await authCache.isAuthenticated(overrideEngine.metadata.id, () => overrideEngine.auth.isAuthenticated())
+      ? await engineAuthCache.isAuthenticated(overrideEngine.metadata.id, () => overrideEngine.auth.isAuthenticated())
       : false;
     debug(`[DEBUG workflow] isOverrideAuthed=${isOverrideAuthed}`);
     if (!isOverrideAuthed) {
@@ -158,7 +111,7 @@ export async function selectEngine(
       const engines = await registry.getAllAsync();
       let fallbackEngine = null as typeof overrideEngine | null;
       for (const eng of engines) {
-        const isAuth = await authCache.isAuthenticated(
+        const isAuth = await engineAuthCache.isAuthenticated(
           eng.metadata.id,
           () => eng.auth.isAuthenticated()
         );
@@ -188,7 +141,7 @@ export async function selectEngine(
 
     for (const engine of engines) {
       debug(`[DEBUG workflow] Checking auth for engine: ${engine.metadata.id}`);
-      const isAuth = await authCache.isAuthenticated(
+      const isAuth = await engineAuthCache.isAuthenticated(
         engine.metadata.id,
         () => engine.auth.isAuthenticated()
       );

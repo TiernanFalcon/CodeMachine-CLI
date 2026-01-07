@@ -19,3 +19,6 @@ export * from './error-recovery.js';
 
 // Export circuit breaker
 export * from './circuit-breaker.js';
+
+// Export auth cache
+export { EngineAuthCache, engineAuthCache } from './auth-cache.js';

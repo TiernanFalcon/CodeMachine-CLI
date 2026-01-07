@@ -124,7 +124,9 @@ export async function streamGenerateContent(
 }> {
   const { apiKey, model, prompt, onChunk, onUsage, abortSignal } = options;
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?key=${apiKey}&alt=sse`;
+  // Use URL without API key - key is passed via header for security
+  // This prevents API key exposure in logs, browser history, and referrer headers
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse`;
 
   const request: GeminiRequest = {
     contents: [
@@ -149,6 +151,7 @@ export async function streamGenerateContent(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      'x-goog-api-key': apiKey,
     },
     body: JSON.stringify(request),
     signal: abortSignal,
