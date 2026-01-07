@@ -12,21 +12,96 @@ import {
 // Re-export for backwards compatibility (deprecated - use engineAuthCache from infra/engines instead)
 export { EngineAuthCache, engineAuthCache as authCache } from '../../infra/engines/index.js';
 
-// Module-level config file cache (loaded once per workflow)
-let cachedConfigFile: EngineConfigFile | null = null;
+/**
+ * Workflow-scoped engine configuration context.
+ * Prevents config leakage between concurrent or sequential workflows
+ * by using a unique symbol key per workflow instance.
+ */
+class WorkflowConfigContext {
+  private configs: Map<symbol, EngineConfigFile | null> = new Map();
+  private currentWorkflow: symbol | null = null;
+
+  /**
+   * Start a new workflow context and return its unique key
+   */
+  startWorkflow(): symbol {
+    const key = Symbol('workflow-config');
+    this.currentWorkflow = key;
+    this.configs.set(key, null);
+    return key;
+  }
+
+  /**
+   * End a workflow context and clean up its config
+   */
+  endWorkflow(key: symbol): void {
+    this.configs.delete(key);
+    if (this.currentWorkflow === key) {
+      this.currentWorkflow = null;
+    }
+  }
+
+  /**
+   * Set config for the current workflow
+   */
+  setConfig(config: EngineConfigFile | null): void {
+    if (this.currentWorkflow) {
+      this.configs.set(this.currentWorkflow, config);
+    }
+  }
+
+  /**
+   * Get config for the current workflow
+   */
+  getConfig(): EngineConfigFile | null {
+    return this.currentWorkflow ? this.configs.get(this.currentWorkflow) ?? null : null;
+  }
+
+  /**
+   * Clear config for the current workflow (without ending it)
+   */
+  clearConfig(): void {
+    if (this.currentWorkflow) {
+      this.configs.set(this.currentWorkflow, null);
+    }
+  }
+}
+
+// Singleton context manager for workflow configs
+const workflowConfigContext = new WorkflowConfigContext();
+
+/**
+ * Start a new workflow context - call this at workflow start
+ * Returns a key that should be passed to endWorkflowContext() when done
+ */
+export function startWorkflowContext(): symbol {
+  return workflowConfigContext.startWorkflow();
+}
+
+/**
+ * End a workflow context and clean up - call this at workflow end
+ */
+export function endWorkflowContext(key: symbol): void {
+  workflowConfigContext.endWorkflow(key);
+}
 
 /**
  * Set the cached engine config file for the current workflow
  */
 export function setEngineConfigFile(config: EngineConfigFile | null): void {
-  cachedConfigFile = config;
+  workflowConfigContext.setConfig(config);
 }
 
 /**
  * Clear the cached engine config file
  */
 export function clearEngineConfigFile(): void {
-  cachedConfigFile = null;
+  workflowConfigContext.clearConfig();
+}
+
+// Internal getter for the current workflow's config
+function getCachedConfigFile(): EngineConfigFile | null {
+  return workflowConfigContext.getConfig();
 }
 
 interface StepWithEngine {
@@ -56,7 +131,8 @@ export async function selectEngine(
 
   // Check for preset/override context first
   const selectionContext = getEngineSelectionContext();
-  const presetEngine = resolveEngineForAgent(step.agentId, selectionContext, cachedConfigFile);
+  const cachedConfig = getCachedConfigFile();
+  const presetEngine = resolveEngineForAgent(step.agentId, selectionContext, cachedConfig);
 
   if (presetEngine) {
     debug(`[DEBUG workflow] Preset/override engine for ${step.agentId}: ${presetEngine}`);
@@ -78,7 +154,7 @@ export async function selectEngine(
 
   // Check if fallback is enabled
   const selectionContextForFallback = getEngineSelectionContext();
-  const fallbackAllowed = isFallbackEnabled(selectionContextForFallback, cachedConfigFile);
+  const fallbackAllowed = isFallbackEnabled(selectionContextForFallback, cachedConfig);
   debug(`[DEBUG workflow] Fallback enabled: ${fallbackAllowed}`);
 
   // Determine engine: step override > first authenticated engine
@@ -181,7 +257,7 @@ export async function selectEngine(
  */
 export function getPresetModel(agentId: string): string | undefined {
   const selectionContext = getEngineSelectionContext();
-  const resolution = resolveEngineAndModelForAgent(agentId, selectionContext, cachedConfigFile);
+  const resolution = resolveEngineAndModelForAgent(agentId, selectionContext, getCachedConfigFile());
 
   if (resolution?.model) {
     debug(`[DEBUG workflow] Preset model for ${agentId}: ${resolution.model}`);

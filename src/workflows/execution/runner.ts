@@ -29,7 +29,7 @@ import {
   type InputContext,
 } from '../input/index.js';
 import { executeStep } from './step.js';
-import { selectEngine, getPresetModel } from './engine.js';
+import { selectEngine, getPresetModel, startWorkflowContext, endWorkflowContext } from './engine.js';
 import { loadControllerConfig } from '../../shared/workflows/controller.js';
 import { registry } from '../../infra/engines/index.js';
 import {
@@ -212,58 +212,66 @@ export class WorkflowRunner {
   async run(): Promise<void> {
     debug('[Runner] Starting workflow: %s', this.template.name);
 
-    // Load initial auto mode state
-    const controllerState = await loadControllerConfig(this.cmRoot);
-    if (controllerState?.autonomousMode && controllerState.controllerConfig) {
-      await this.setAutoMode(true);
-    }
+    // Start workflow context to scope engine config (prevents leakage between workflows)
+    const workflowContextKey = startWorkflowContext();
 
-    // Start the machine
-    this.machine.send({ type: 'START' });
-    this.emitter.setWorkflowStatus('running');
-
-    // Main loop
-    while (!this.machine.isFinal) {
-      const state = this.machine.state;
-      const _ctx = this.machine.context;
-
-      if (state === 'running') {
-        await this.executeCurrentStep();
-      } else if (state === 'waiting') {
-        await this.handleWaiting();
+    try {
+      // Load initial auto mode state
+      const controllerState = await loadControllerConfig(this.cmRoot);
+      if (controllerState?.autonomousMode && controllerState.controllerConfig) {
+        await this.setAutoMode(true);
       }
-    }
 
-    // Final state handling
-    const finalState = this.machine.state;
-    debug('[Runner] Workflow ended in state: %s', finalState);
+      // Start the machine
+      this.machine.send({ type: 'START' });
+      this.emitter.setWorkflowStatus('running');
 
-    if (finalState === 'completed') {
-      this.emitter.setWorkflowStatus('completed');
+      // Main loop
+      while (!this.machine.isFinal) {
+        const state = this.machine.state;
+        const _ctx = this.machine.context;
 
-      // Generate workflow summary (non-blocking)
-      try {
-        const summaryPath = path.join(this.cmRoot, 'summaries', 'workflow-summary.md');
-        await generateWorkflowSummary({
-          steps: this.template.steps,
-          savePath: summaryPath,
-          cmRoot: this.cmRoot
-        });
-        debug('[Runner] Workflow summary generated: %s', summaryPath);
-      } catch (summaryError) {
-        // Don't fail workflow if summary generation fails
-        debug('[Runner] Failed to generate workflow summary: %o', summaryError);
+        if (state === 'running') {
+          await this.executeCurrentStep();
+        } else if (state === 'waiting') {
+          await this.handleWaiting();
+        }
       }
-    } else if (finalState === 'stopped') {
-      this.emitter.setWorkflowStatus('stopped');
-    } else if (finalState === 'error') {
-      this.emitter.setWorkflowStatus('error');
-      const error = this.machine.context.lastError;
-      if (error) {
-        (process as NodeJS.EventEmitter).emit('workflow:error', {
-          reason: error.message,
-        });
+
+      // Final state handling
+      const finalState = this.machine.state;
+      debug('[Runner] Workflow ended in state: %s', finalState);
+
+      if (finalState === 'completed') {
+        this.emitter.setWorkflowStatus('completed');
+
+        // Generate workflow summary (non-blocking)
+        try {
+          const summaryPath = path.join(this.cmRoot, 'summaries', 'workflow-summary.md');
+          await generateWorkflowSummary({
+            steps: this.template.steps,
+            savePath: summaryPath,
+            cmRoot: this.cmRoot
+          });
+          debug('[Runner] Workflow summary generated: %s', summaryPath);
+        } catch (summaryError) {
+          // Don't fail workflow if summary generation fails
+          debug('[Runner] Failed to generate workflow summary: %o', summaryError);
+        }
+      } else if (finalState === 'stopped') {
+        this.emitter.setWorkflowStatus('stopped');
+      } else if (finalState === 'error') {
+        this.emitter.setWorkflowStatus('error');
+        const error = this.machine.context.lastError;
+        if (error) {
+          (process as NodeJS.EventEmitter).emit('workflow:error', {
+            reason: error.message,
+          });
+        }
       }
+    } finally {
+      // Clean up workflow context to prevent config leakage
+      endWorkflowContext(workflowContextKey);
     }
   }
 

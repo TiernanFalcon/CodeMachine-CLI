@@ -125,8 +125,13 @@ export class AgentLoggerService {
     // 1. We're the only writer in this process (single-threaded)
     // 2. The lock prevents OTHER processes from writing simultaneously
     // 3. If lock fails, we log a warning but continue (degraded mode)
-    this.lockService.acquireLock(agent.logPath).catch(error => {
-      logger.warn(`Failed to acquire lock for ${agent.logPath} - continuing without lock: ${error}`);
+    // Use void to explicitly mark as fire-and-forget, with nested try-catch to prevent unhandled rejections
+    void this.lockService.acquireLock(agent.logPath).catch(error => {
+      try {
+        logger.warn(`Failed to acquire lock for ${agent.logPath} - continuing without lock: ${error}`);
+      } catch {
+        // Suppress any errors from logging to prevent unhandled rejection
+      }
     });
 
     logger.debug(`Created log stream for agent ${agentId} at ${agent.logPath}`);
