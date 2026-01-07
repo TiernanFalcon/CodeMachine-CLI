@@ -24,7 +24,7 @@ export type AgentTier = 1 | 2 | 3;
  * Agent tier assignments based on complexity
  */
 const AGENT_TIERS: Record<string, AgentTier> = {
-  // Tier 1: Complex reasoning - strategic planning, architecture
+  // Tier 1: Complex reasoning - strategic planning, architecture, code generation
   'principal-analyst': 1,
   'blueprint-orchestrator': 1,
   'plan-agent': 1,
@@ -33,9 +33,9 @@ const AGENT_TIERS: Record<string, AgentTier> = {
   'behavior-architect': 1,
   'ui-ux-architect': 1,
   'operational-architect': 1,
+  'code-generation': 1,
   // Tier 2: Standard tasks - development work
   'context-manager': 2,
-  'code-generation': 2,
   'runtime-prep': 2,
   'task-breakdown': 2,
   // Tier 3: Simple tasks - quick checks, commits

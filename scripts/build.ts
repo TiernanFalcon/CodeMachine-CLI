@@ -77,7 +77,10 @@ const resourceFiles = [
 // Generate simple imports file (no exports/mapping needed with --asset-naming)
 const imports = resourceFiles.map((abs) => {
   // Manifest is at src/shared/runtime/, so need ../../../ to reach repo root
-  const rel = '../../../' + abs.replace(repoRoot + '/', '');
+  // Normalize paths to forward slashes for cross-platform compatibility (Windows uses backslashes)
+  const normalizedAbs = abs.replace(/\\/g, '/');
+  const normalizedRoot = repoRoot.replace(/\\/g, '/');
+  const rel = '../../../' + normalizedAbs.replace(normalizedRoot + '/', '');
   return `import "${rel}" with { type: "file" };`;
 });
 

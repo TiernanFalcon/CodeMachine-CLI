@@ -24,6 +24,7 @@ module.exports = {
   // Paths relative to codemachine package root
   packageDir: {
     context_output_format: path.join('prompts', 'templates', 'codemachine', 'output-formats', 'context-output.md'),
+    plan_output_format: path.join('prompts', 'templates', 'codemachine', 'output-formats', 'planning-output.md'),
     smart_anchor: path.join('prompts', 'templates', 'codemachine', 'shared-instructions', 'smart-anchor.md'),
     command_constraints: path.join('prompts', 'templates', 'codemachine', 'shared-instructions', 'command-constraints.md'),
     atomic_generation: path.join('prompts', 'templates', 'codemachine', 'shared-instructions', 'atomic-generation.md'),

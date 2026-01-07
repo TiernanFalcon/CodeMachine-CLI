@@ -139,7 +139,7 @@ The plan must follow this specific structure and include all the detailed fields
 8.  **Verification Strategy:** Outline testing and integration approaches in **Section 6**, potentially including artifact validation steps.
 9.  **Fill All Fields:** Meticulously fill in *all* the specified fields in the format for every task and section. Use placeholders like `[To be defined]` only if absolutely necessary and state why.
 10. IMPORTANT: Don't make iterations that require changes across the repository. For example an iteration for testing instead spread testing across the other iterations. So each iteration is limited to modify a certain number of files.
-11. **Output:** Write the output to `.codemachine/artifacts/plan.md`
+11. **Output:** Write the plan files to the `.codemachine/artifacts/plan/` directory using the file structure specified in the Output section below.
 
 ---
 
