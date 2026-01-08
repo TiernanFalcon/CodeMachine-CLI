@@ -197,9 +197,14 @@ export class CoordinatorParser {
   private extractQuotedString(str: string): string | null {
     const trimmed = str.trim();
 
+    // Handle empty string case
+    if (trimmed.length === 0) {
+      return null;
+    }
+
     // Try to find matching quotes
     if (trimmed.startsWith("'") || trimmed.startsWith('"')) {
-      const quoteChar = trimmed[0];
+      const quoteChar = trimmed[0] as string; // Safe: length > 0 and starts with quote
       let i = 1;
 
       // Find matching end quote (must be followed by space/end or preceded by space)

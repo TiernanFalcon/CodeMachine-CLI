@@ -131,6 +131,10 @@ function formatStreamJsonLine(line: string): string | null {
 export async function runClaude(options: RunClaudeOptions): Promise<RunClaudeResult> {
   const { prompt, workingDir, model, env, onData, onErrorData, onTelemetry, abortSignal, timeout = 1800000 } = options;
 
+  // Clear tool name map at start of each run to prevent memory leaks
+  // and data corruption between consecutive runs
+  toolNameMap.clear();
+
   if (!prompt) {
     throw new Error('runClaude requires a prompt.');
   }

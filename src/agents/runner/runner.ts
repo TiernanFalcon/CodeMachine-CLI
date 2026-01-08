@@ -476,8 +476,9 @@ export async function executeAgent(
         } else {
           try {
             process.stdout.write(chunk);
-          } catch {
-            // ignore streaming failures
+          } catch (writeError) {
+            // Log streaming failures for debugging instead of silently swallowing
+            debug('[AgentRunner] stdout write failed: %s', (writeError as Error).message);
           }
         }
       },
@@ -493,8 +494,9 @@ export async function executeAgent(
         } else {
           try {
             process.stderr.write(chunk);
-          } catch {
-            // ignore streaming failures
+          } catch (writeError) {
+            // Log streaming failures for debugging instead of silently swallowing
+            debug('[AgentRunner] stderr write failed: %s', (writeError as Error).message);
           }
         }
       },

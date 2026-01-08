@@ -107,6 +107,10 @@ function formatStreamJsonLine(line: string): string | null {
 export async function runCcr(options: RunCcrOptions): Promise<RunCcrResult> {
   const { prompt, workingDir, model, env, onData, onErrorData, abortSignal, timeout = 1800000 } = options;
 
+  // Clear tool name map at start of each run to prevent memory leaks
+  // and data corruption between consecutive runs
+  toolNameMap.clear();
+
   if (!prompt) {
     throw new Error('runCcr requires a prompt.');
   }
