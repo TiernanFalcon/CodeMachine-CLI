@@ -7,6 +7,7 @@ import { AgentMonitorService } from '../monitoring/index.js';
 import { processPromptString } from '../../shared/prompts/index.js';
 import { resolvePlaceholderPath, loadPlaceholdersConfig } from '../../shared/prompts/config/loader.js';
 import * as logger from '../../shared/logging/logger.js';
+import { safeResolvePath, PathTraversalError } from '../../shared/utils/path.js';
 import chalk from 'chalk';
 
 export interface CoordinationExecutorOptions {
@@ -262,6 +263,7 @@ export class CoordinationExecutor {
    * Load multiple input files and concatenate their contents
    * @param filePaths Array of file paths (absolute, relative to workingDir, or with {placeholder} syntax)
    * @returns Concatenated file contents with separators
+   * @throws {PathTraversalError} If any path attempts to escape the working directory
    */
   private async loadInputFiles(filePaths: string[]): Promise<string> {
     if (!filePaths || filePaths.length === 0) {
@@ -275,10 +277,27 @@ export class CoordinationExecutor {
         // First, resolve any placeholders in the path
         const pathWithPlaceholdersResolved = this.resolvePlaceholdersInPath(filePath);
 
-        // Then resolve absolute/relative paths
-        const resolvedPath = path.isAbsolute(pathWithPlaceholdersResolved)
-          ? pathWithPlaceholdersResolved
-          : path.resolve(this.options.workingDir, pathWithPlaceholdersResolved);
+        // Safely resolve and validate the path to prevent path traversal attacks
+        // This ensures the resolved path stays within the working directory
+        let resolvedPath: string;
+        try {
+          resolvedPath = safeResolvePath(this.options.workingDir, pathWithPlaceholdersResolved);
+        } catch (error) {
+          if (error instanceof PathTraversalError) {
+            // Log security warning and skip this file
+            logger.error(
+              `Security: Path traversal attempt blocked for "${filePath}". ` +
+              `Resolved path "${error.resolvedPath}" is outside working directory "${error.baseDir}".`
+            );
+            contents.push(
+              `\n=== File: ${filePath} (BLOCKED - PATH TRAVERSAL) ===\n` +
+              `Error: Access denied - path resolves outside the working directory\n` +
+              `${'='.repeat(60)}\n`
+            );
+            continue;
+          }
+          throw error;
+        }
 
         logger.debug(`Loading input file: ${resolvedPath} (original: ${filePath})`);
 

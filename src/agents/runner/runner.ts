@@ -1,7 +1,7 @@
 import * as path from 'node:path';
 
 import type { EngineType } from '../../infra/engines/index.js';
-import { getEngine, registry } from '../../infra/engines/index.js';
+import { getEngine, registry, engineAuthCache } from '../../infra/engines/index.js';
 import { MemoryAdapter } from '../../infra/fs/memory-adapter.js';
 import { MemoryStore } from '../index.js';
 import { loadAgentConfig } from './config.js';
@@ -13,48 +13,6 @@ import type { ParsedTelemetry } from '../../infra/engines/core/types.js';
 import { formatForLogFile } from '../../shared/formatters/logFileFormatter.js';
 import { info, error, debug } from '../../shared/logging/logger.js';
 import { parseToolUse, extractContextFromTool, extractGoal } from './parser.js';
-import { getAuthCacheTtlMs } from '../../shared/config/timeouts.js';
-
-/**
- * Cache for engine authentication status with TTL (shared across all subagents)
- * Prevents repeated auth checks that can take 10-30 seconds each
- * CRITICAL: This fixes the 5-minute delay bug when spawning multiple subagents
- *
- * TTL is configurable via CODEMACHINE_AUTH_CACHE_TTL_MS environment variable
- */
-class EngineAuthCache {
-  private cache: Map<string, { isAuthenticated: boolean; timestamp: number }> = new Map();
-
-  async isAuthenticated(engineId: string, checkFn: () => Promise<boolean>): Promise<boolean> {
-    const cached = this.cache.get(engineId);
-    const now = Date.now();
-    const ttlMs = getAuthCacheTtlMs();
-
-    // Return cached value if still valid
-    if (cached && (now - cached.timestamp) < ttlMs) {
-      return cached.isAuthenticated;
-    }
-
-    // Cache miss or expired - perform actual check
-    const result = await checkFn();
-
-    // Cache the result
-    this.cache.set(engineId, {
-      isAuthenticated: result,
-      timestamp: now
-    });
-
-    return result;
-  }
-
-  /** Clear cache (useful for testing or after auth changes) */
-  clear(): void {
-    this.cache.clear();
-  }
-}
-
-// Global auth cache instance (shared across all subagent executions)
-const authCache = new EngineAuthCache();
 
 // --------------------------------------------------------------------------
 // Helper Types
@@ -99,7 +57,7 @@ async function resolveEngine(
     let foundEngine = null;
 
     for (const engine of engines) {
-      const isAuth = await authCache.isAuthenticated(
+      const isAuth = await engineAuthCache.isAuthenticated(
         engine.metadata.id,
         () => engine.auth.isAuthenticated()
       );

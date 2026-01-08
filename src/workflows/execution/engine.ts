@@ -1,4 +1,4 @@
-import { registry } from '../../infra/engines/index.js';
+import { registry, engineAuthCache } from '../../infra/engines/index.js';
 import { debug } from '../../shared/logging/logger.js';
 import type { WorkflowEventEmitter } from '../events/index.js';
 import {
@@ -9,72 +9,100 @@ import {
   type EngineConfigFile,
 } from './engine-presets.js';
 
-// Module-level config file cache (loaded once per workflow)
-let cachedConfigFile: EngineConfigFile | null = null;
+// Re-export for backwards compatibility (deprecated - use engineAuthCache from infra/engines instead)
+export { EngineAuthCache, engineAuthCache as authCache } from '../../infra/engines/index.js';
+
+/**
+ * Workflow-scoped engine configuration context.
+ * Prevents config leakage between concurrent or sequential workflows
+ * by using a unique symbol key per workflow instance.
+ */
+class WorkflowConfigContext {
+  private configs: Map<symbol, EngineConfigFile | null> = new Map();
+  private currentWorkflow: symbol | null = null;
+
+  /**
+   * Start a new workflow context and return its unique key
+   */
+  startWorkflow(): symbol {
+    const key = Symbol('workflow-config');
+    this.currentWorkflow = key;
+    this.configs.set(key, null);
+    return key;
+  }
+
+  /**
+   * End a workflow context and clean up its config
+   */
+  endWorkflow(key: symbol): void {
+    this.configs.delete(key);
+    if (this.currentWorkflow === key) {
+      this.currentWorkflow = null;
+    }
+  }
+
+  /**
+   * Set config for the current workflow
+   */
+  setConfig(config: EngineConfigFile | null): void {
+    if (this.currentWorkflow) {
+      this.configs.set(this.currentWorkflow, config);
+    }
+  }
+
+  /**
+   * Get config for the current workflow
+   */
+  getConfig(): EngineConfigFile | null {
+    return this.currentWorkflow ? this.configs.get(this.currentWorkflow) ?? null : null;
+  }
+
+  /**
+   * Clear config for the current workflow (without ending it)
+   */
+  clearConfig(): void {
+    if (this.currentWorkflow) {
+      this.configs.set(this.currentWorkflow, null);
+    }
+  }
+}
+
+// Singleton context manager for workflow configs
+const workflowConfigContext = new WorkflowConfigContext();
+
+/**
+ * Start a new workflow context - call this at workflow start
+ * Returns a key that should be passed to endWorkflowContext() when done
+ */
+export function startWorkflowContext(): symbol {
+  return workflowConfigContext.startWorkflow();
+}
+
+/**
+ * End a workflow context and clean up - call this at workflow end
+ */
+export function endWorkflowContext(key: symbol): void {
+  workflowConfigContext.endWorkflow(key);
+}
 
 /**
  * Set the cached engine config file for the current workflow
  */
 export function setEngineConfigFile(config: EngineConfigFile | null): void {
-  cachedConfigFile = config;
+  workflowConfigContext.setConfig(config);
 }
 
 /**
  * Clear the cached engine config file
  */
 export function clearEngineConfigFile(): void {
-  cachedConfigFile = null;
+  workflowConfigContext.clearConfig();
 }
 
-/**
- * Cache for engine authentication status with TTL
- * Prevents repeated auth checks (which can take 10-30 seconds)
- */
-export class EngineAuthCache {
-  private cache: Map<string, { isAuthenticated: boolean; timestamp: number }> = new Map();
-  private ttlMs: number = 5 * 60 * 1000; // 5 minutes TTL
-
-  /**
-   * Check if engine is authenticated (with caching)
-   */
-  async isAuthenticated(engineId: string, checkFn: () => Promise<boolean>): Promise<boolean> {
-    const cached = this.cache.get(engineId);
-    const now = Date.now();
-
-    // Return cached value if still valid
-    if (cached && (now - cached.timestamp) < this.ttlMs) {
-      return cached.isAuthenticated;
-    }
-
-    // Cache miss or expired - perform actual check
-    const result = await checkFn();
-
-    // Cache the result
-    this.cache.set(engineId, {
-      isAuthenticated: result,
-      timestamp: now
-    });
-
-    return result;
-  }
-
-  /**
-   * Invalidate cache for specific engine
-   */
-  invalidate(engineId: string): void {
-    this.cache.delete(engineId);
-  }
-
-  /**
-   * Clear entire cache
-   */
-  clear(): void {
-    this.cache.clear();
-  }
+// Internal getter for the current workflow's config
+function getCachedConfigFile(): EngineConfigFile | null {
+  return workflowConfigContext.getConfig();
 }
-
-// Global auth cache instance
-export const authCache = new EngineAuthCache();
 
 interface StepWithEngine {
   engine?: string;
@@ -103,13 +131,14 @@ export async function selectEngine(
 
   // Check for preset/override context first
   const selectionContext = getEngineSelectionContext();
-  const presetEngine = resolveEngineForAgent(step.agentId, selectionContext, cachedConfigFile);
+  const cachedConfig = getCachedConfigFile();
+  const presetEngine = resolveEngineForAgent(step.agentId, selectionContext, cachedConfig);
 
   if (presetEngine) {
     debug(`[DEBUG workflow] Preset/override engine for ${step.agentId}: ${presetEngine}`);
     const presetEngineModule = await registry.getAsync(presetEngine);
     const isPresetAuthed = presetEngineModule
-      ? await authCache.isAuthenticated(presetEngineModule.metadata.id, () => presetEngineModule.auth.isAuthenticated())
+      ? await engineAuthCache.isAuthenticated(presetEngineModule.metadata.id, () => presetEngineModule.auth.isAuthenticated())
       : false;
 
     if (isPresetAuthed) {
@@ -125,7 +154,7 @@ export async function selectEngine(
 
   // Check if fallback is enabled
   const selectionContextForFallback = getEngineSelectionContext();
-  const fallbackAllowed = isFallbackEnabled(selectionContextForFallback, cachedConfigFile);
+  const fallbackAllowed = isFallbackEnabled(selectionContextForFallback, cachedConfig);
   debug(`[DEBUG workflow] Fallback enabled: ${fallbackAllowed}`);
 
   // Determine engine: step override > first authenticated engine
@@ -138,7 +167,7 @@ export async function selectEngine(
     const overrideEngine = await registry.getAsync(engineType);
     debug(`[DEBUG workflow] Checking auth for override engine...`);
     const isOverrideAuthed = overrideEngine
-      ? await authCache.isAuthenticated(overrideEngine.metadata.id, () => overrideEngine.auth.isAuthenticated())
+      ? await engineAuthCache.isAuthenticated(overrideEngine.metadata.id, () => overrideEngine.auth.isAuthenticated())
       : false;
     debug(`[DEBUG workflow] isOverrideAuthed=${isOverrideAuthed}`);
     if (!isOverrideAuthed) {
@@ -158,7 +187,7 @@ export async function selectEngine(
       const engines = await registry.getAllAsync();
       let fallbackEngine = null as typeof overrideEngine | null;
       for (const eng of engines) {
-        const isAuth = await authCache.isAuthenticated(
+        const isAuth = await engineAuthCache.isAuthenticated(
           eng.metadata.id,
           () => eng.auth.isAuthenticated()
         );
@@ -188,7 +217,7 @@ export async function selectEngine(
 
     for (const engine of engines) {
       debug(`[DEBUG workflow] Checking auth for engine: ${engine.metadata.id}`);
-      const isAuth = await authCache.isAuthenticated(
+      const isAuth = await engineAuthCache.isAuthenticated(
         engine.metadata.id,
         () => engine.auth.isAuthenticated()
       );
@@ -228,7 +257,7 @@ export async function selectEngine(
  */
 export function getPresetModel(agentId: string): string | undefined {
   const selectionContext = getEngineSelectionContext();
-  const resolution = resolveEngineAndModelForAgent(agentId, selectionContext, cachedConfigFile);
+  const resolution = resolveEngineAndModelForAgent(agentId, selectionContext, getCachedConfigFile());
 
   if (resolution?.model) {
     debug(`[DEBUG workflow] Preset model for ${agentId}: ${resolution.model}`);

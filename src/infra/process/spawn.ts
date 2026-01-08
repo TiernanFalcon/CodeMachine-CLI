@@ -1,6 +1,99 @@
 import type { Subprocess } from 'bun';
 import * as logger from '../../shared/logging/logger.js';
 
+/**
+ * Environment variables that should never be overridden by user input.
+ * These can be used for code injection or privilege escalation.
+ */
+const PROTECTED_ENV_VARS = new Set([
+  // Unix library injection
+  'LD_PRELOAD',
+  'LD_LIBRARY_PATH',
+  'DYLD_INSERT_LIBRARIES',
+  'DYLD_LIBRARY_PATH',
+  'DYLD_FRAMEWORK_PATH',
+
+  // Shell execution
+  'SHELL',
+  'BASH_ENV',
+  'ENV',
+  'ZDOTDIR',
+
+  // Sudo/privilege escalation
+  'SUDO_ASKPASS',
+  'SSH_ASKPASS',
+
+  // Python code injection
+  'PYTHONSTARTUP',
+  'PYTHONPATH',
+
+  // Perl code injection
+  'PERL5LIB',
+  'PERL5OPT',
+
+  // Ruby code injection
+  'RUBYLIB',
+  'RUBYOPT',
+
+  // Node.js injection
+  'NODE_OPTIONS',
+  'NODE_EXTRA_CA_CERTS',
+
+  // Git injection
+  'GIT_SSH_COMMAND',
+  'GIT_ASKPASS',
+  'GIT_EXEC_PATH',
+
+  // General security-sensitive
+  'IFS',
+  'CDPATH',
+  'GLOBIGNORE',
+  'SHELLOPTS',
+  'BASHOPTS',
+  'PROMPT_COMMAND',
+]);
+
+/**
+ * Sanitize environment variables to prevent injection attacks.
+ * Removes protected variables and validates values.
+ */
+function sanitizeEnv(userEnv: NodeJS.ProcessEnv | undefined): NodeJS.ProcessEnv {
+  if (!userEnv) {
+    return process.env;
+  }
+
+  const sanitized: NodeJS.ProcessEnv = { ...process.env };
+
+  for (const [key, value] of Object.entries(userEnv)) {
+    // Skip undefined values
+    if (value === undefined) {
+      continue;
+    }
+
+    // Block protected variables
+    const upperKey = key.toUpperCase();
+    if (PROTECTED_ENV_VARS.has(upperKey)) {
+      logger.warn(`Security: Blocked attempt to set protected env var: ${key}`);
+      continue;
+    }
+
+    // Block variables that look like injection attempts (e.g., contain command separators)
+    // Allow PATH override but sanitize it (common legitimate use case)
+    if (upperKey !== 'PATH' && upperKey !== 'HOME' && upperKey !== 'USER') {
+      // Check for shell metacharacters that could enable command injection
+      // when variables are expanded in shell contexts
+      if (value.includes('$(') || value.includes('`') || value.includes('\n')) {
+        logger.warn(`Security: Blocked suspicious env var value for ${key}`);
+        continue;
+      }
+    }
+
+    sanitized[key] = value;
+  }
+
+  return sanitized;
+}
+
 export interface SpawnOptions {
   command: string;
   args?: string[];
@@ -111,7 +204,8 @@ export function spawnProcess(options: SpawnOptions): Promise<SpawnResult> {
     const executable = resolveCommandExecutable(command);
     const child = Bun.spawn([executable, ...args], {
       cwd,
-      env: env ? { ...process.env, ...env } : process.env,
+      // Sanitize env vars to prevent injection attacks (blocks LD_PRELOAD, NODE_OPTIONS, etc.)
+      env: sanitizeEnv(env),
       // When inheriting stdio, inherit stdin too (needed for interactive TUI apps like Ink)
       stdin: stdinEncoded ?? (stdioMode === 'inherit' ? 'inherit' : 'ignore'),
       stdout: stdioMode === 'inherit' ? 'inherit' : 'pipe',
