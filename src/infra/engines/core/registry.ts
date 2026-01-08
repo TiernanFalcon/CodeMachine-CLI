@@ -154,7 +154,9 @@ class EngineRegistry {
   }
 
   /**
-   * Get an engine by ID (loads if not already loaded)
+   * Get an engine by ID (returns only if already loaded)
+   * @deprecated Use getAsync() for consistent behavior. This method returns undefined
+   * for unloaded engines, which is confusing. Will be removed in a future version.
    */
   get(id: string): EngineModule | undefined {
     const entry = this.engines.get(id);
@@ -173,7 +175,10 @@ class EngineRegistry {
   }
 
   /**
-   * Get an engine by ID with async loading
+   * Get an engine by ID with async loading (preferred method)
+   *
+   * This is the recommended way to get engines as it handles lazy loading.
+   * Returns undefined only if the engine ID is not registered.
    */
   async getAsync(id: string): Promise<EngineModule | undefined> {
     const entry = this.engines.get(id);
@@ -185,7 +190,9 @@ class EngineRegistry {
   }
 
   /**
-   * Get all registered engines (loads all - use sparingly)
+   * Get all already-loaded engines (does not load unloaded engines)
+   * @deprecated Use getAllAsync() for consistent behavior. This method only returns
+   * engines that have already been loaded, which can lead to inconsistent results.
    */
   getAll(): EngineModule[] {
     const loaded: EngineModule[] = [];
@@ -200,7 +207,10 @@ class EngineRegistry {
   }
 
   /**
-   * Get all engines with async loading
+   * Get all engines with async loading (preferred method)
+   *
+   * This is the recommended way to get all engines as it ensures
+   * all engines are loaded before returning.
    */
   async getAllAsync(): Promise<EngineModule[]> {
     const engines = await Promise.all(
@@ -235,7 +245,9 @@ class EngineRegistry {
   }
 
   /**
-   * Get the default engine (first by order, with loading)
+   * Get the default engine if already loaded
+   * @deprecated Use getDefaultAsync() for consistent behavior. This method only returns
+   * the default engine if it's already loaded, which can return undefined unexpectedly.
    */
   getDefault(): EngineModule | undefined {
     const sorted = Array.from(this.engines.values())
@@ -251,7 +263,10 @@ class EngineRegistry {
   }
 
   /**
-   * Get the default engine with async loading
+   * Get the default engine with async loading (preferred method)
+   *
+   * This is the recommended way to get the default engine as it ensures
+   * the engine is loaded before returning.
    */
   async getDefaultAsync(): Promise<EngineModule | undefined> {
     const sorted = Array.from(this.engines.values())

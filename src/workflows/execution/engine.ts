@@ -16,8 +16,11 @@ export { EngineAuthCache, engineAuthCache as authCache } from '../../infra/engin
  * Workflow-scoped engine configuration context.
  * Prevents config leakage between concurrent or sequential workflows
  * by using a unique symbol key per workflow instance.
+ *
+ * This class can be instantiated directly for testing, or use the
+ * module-level default via getWorkflowConfigContext().
  */
-class WorkflowConfigContext {
+export class WorkflowConfigContext {
   private configs: Map<symbol, EngineConfigFile | null> = new Map();
   private currentWorkflow: symbol | null = null;
 
@@ -65,10 +68,43 @@ class WorkflowConfigContext {
       this.configs.set(this.currentWorkflow, null);
     }
   }
+
+  /**
+   * Reset the context completely (for testing)
+   * @internal
+   */
+  reset(): void {
+    this.configs.clear();
+    this.currentWorkflow = null;
+  }
 }
 
-// Singleton context manager for workflow configs
-const workflowConfigContext = new WorkflowConfigContext();
+// Default context manager for workflow configs
+let workflowConfigContext = new WorkflowConfigContext();
+
+/**
+ * Get the current workflow config context
+ * @internal For testing - use the exported functions instead
+ */
+export function getWorkflowConfigContext(): WorkflowConfigContext {
+  return workflowConfigContext;
+}
+
+/**
+ * Replace the workflow config context (for testing)
+ * @internal
+ */
+export function setWorkflowConfigContext(context: WorkflowConfigContext): void {
+  workflowConfigContext = context;
+}
+
+/**
+ * Reset the workflow config context to a fresh instance (for testing)
+ * @internal
+ */
+export function resetWorkflowConfigContext(): void {
+  workflowConfigContext = new WorkflowConfigContext();
+}
 
 /**
  * Start a new workflow context - call this at workflow start
@@ -183,24 +219,20 @@ export async function selectEngine(
       const authMsg = `${pretty} override is not authenticated; falling back to first authenticated engine by order. Run 'codemachine auth login' to use ${pretty}.`;
       emitter.logMessage(uniqueAgentId, authMsg);
 
-      // Find first authenticated engine by order (with caching)
+      // Find first authenticated engine by order (with parallel auth checks)
       const engines = await registry.getAllAsync();
-      let fallbackEngine = null as typeof overrideEngine | null;
-      for (const eng of engines) {
-        const isAuth = await engineAuthCache.isAuthenticated(
-          eng.metadata.id,
-          () => eng.auth.isAuthenticated()
-        );
-        if (isAuth) {
-          fallbackEngine = eng;
-          break;
-        }
-      }
-
+      const authResults = await Promise.all(
+        engines.map(async (eng) => ({
+          engine: eng,
+          isAuth: await engineAuthCache.isAuthenticated(
+            eng.metadata.id,
+            () => eng.auth.isAuthenticated()
+          ),
+        }))
+      );
+      const authenticatedEngine = authResults.find((r) => r.isAuth)?.engine;
       // If none authenticated, fall back to registry default (may still require auth)
-      if (!fallbackEngine) {
-        fallbackEngine = (await registry.getDefaultAsync()) ?? null;
-      }
+      const fallbackEngine = authenticatedEngine ?? (await registry.getDefaultAsync()) ?? null;
 
       if (fallbackEngine) {
         engineType = fallbackEngine.metadata.id;
@@ -210,28 +242,31 @@ export async function selectEngine(
     }
   } else {
     debug(`[DEBUG workflow] No step.engine specified, finding authenticated engine...`);
-    // Fallback: find first authenticated engine by order (with caching)
+    // Fallback: find first authenticated engine by order (with parallel auth checks)
     const engines = await registry.getAllAsync();
     debug(`[DEBUG workflow] Available engines: ${engines.map(e => e.metadata.id).join(', ')}`);
-    let foundEngine = null;
 
-    for (const engine of engines) {
-      debug(`[DEBUG workflow] Checking auth for engine: ${engine.metadata.id}`);
-      const isAuth = await engineAuthCache.isAuthenticated(
-        engine.metadata.id,
-        () => engine.auth.isAuthenticated()
-      );
-      debug(`[DEBUG workflow] Engine ${engine.metadata.id} isAuth=${isAuth}`);
-      if (isAuth) {
-        foundEngine = engine;
-        break;
-      }
-    }
+    // Check all engines in parallel for performance
+    const authResults = await Promise.all(
+      engines.map(async (engine) => {
+        debug(`[DEBUG workflow] Checking auth for engine: ${engine.metadata.id}`);
+        const isAuth = await engineAuthCache.isAuthenticated(
+          engine.metadata.id,
+          () => engine.auth.isAuthenticated()
+        );
+        debug(`[DEBUG workflow] Engine ${engine.metadata.id} isAuth=${isAuth}`);
+        return { engine, isAuth };
+      })
+    );
+
+    // Find first authenticated engine (preserves registry order)
+    const authenticatedResult = authResults.find((r) => r.isAuth);
+    let foundEngine = authenticatedResult?.engine ?? null;
 
     if (!foundEngine) {
       debug(`[DEBUG workflow] No authenticated engine found, using default`);
       // If no authenticated engine, use default (first by order)
-      foundEngine = await registry.getDefaultAsync();
+      foundEngine = (await registry.getDefaultAsync()) ?? null;
     }
 
     if (!foundEngine) {

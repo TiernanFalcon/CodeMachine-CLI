@@ -9,7 +9,7 @@
  * - Graceful cleanup on process termination
  */
 
-export { AgentMonitorService, type AgentTreeNode } from './monitor';
+export { AgentMonitorService, createAgentMonitor, type AgentTreeNode, type AgentMonitorDependencies } from './monitor';
 export { AgentLoggerService } from './logger';
 export { AgentRegistry } from './registry';
 export { MonitoringCleanup } from './cleanup';

@@ -14,22 +14,39 @@ export interface CoordinatorOptions {
 }
 
 /**
+ * Dependencies for CoordinatorService
+ */
+export interface CoordinatorDependencies {
+  parser?: CoordinatorParser;
+  monitorService?: AgentMonitorService;
+}
+
+/**
  * Main coordinator service
  * Coordinates parsing and execution of multi-agent coordination
+ *
+ * Prefer using createCoordinator() for new code to enable dependency injection.
+ * getInstance() is maintained for backward compatibility.
  */
 export class CoordinatorService {
   private static instance: CoordinatorService | null = null;
   private static creating = false;
   private parser: CoordinatorParser;
+  private monitorService: AgentMonitorService;
 
-  private constructor() {
-    this.parser = new CoordinatorParser();
+  /**
+   * Constructor accepts optional dependencies for DI
+   * @param deps - Optional dependencies (parser, monitorService)
+   */
+  constructor(deps?: CoordinatorDependencies) {
+    this.parser = deps?.parser ?? new CoordinatorParser();
+    this.monitorService = deps?.monitorService ?? AgentMonitorService.getInstance();
     logger.debug('CoordinatorService initialized');
   }
 
   /**
    * Get singleton instance
-   * Uses a creation guard to prevent partial initialization if constructor throws
+   * @deprecated Prefer createCoordinator() for new code to enable dependency injection
    */
   static getInstance(): CoordinatorService {
     if (!CoordinatorService.instance) {
@@ -55,6 +72,14 @@ export class CoordinatorService {
   }
 
   /**
+   * Set a custom instance (for testing with mocks)
+   * @internal
+   */
+  static setInstance(instance: CoordinatorService): void {
+    CoordinatorService.instance = instance;
+  }
+
+  /**
    * Execute a coordination script
    */
   async execute(script: string, options: CoordinatorOptions): Promise<CoordinationResult> {
@@ -73,7 +98,7 @@ export class CoordinatorService {
     }
 
     // Detect parent context for proper hierarchy tracking
-    const monitor = AgentMonitorService.getInstance();
+    const monitor = this.monitorService;
     let contextParentId: number | undefined;
 
     // 1. Check environment variable (workflow/agent context propagation)
@@ -175,4 +200,24 @@ export class CoordinatorService {
     console.log(chalk.dim(`List all agents: codemachine agents`));
     console.log('');
   }
+}
+
+/**
+ * Factory function to create CoordinatorService with dependency injection
+ * Preferred over getInstance() for new code and testing
+ *
+ * @param deps - Optional dependencies for testing
+ * @returns A new CoordinatorService instance
+ *
+ * @example
+ * // Production usage
+ * const coordinator = createCoordinator();
+ *
+ * @example
+ * // Testing with mock services
+ * const mockMonitor = createAgentMonitor({ repository: mockRepo });
+ * const coordinator = createCoordinator({ monitorService: mockMonitor });
+ */
+export function createCoordinator(deps?: CoordinatorDependencies): CoordinatorService {
+  return new CoordinatorService(deps);
 }
