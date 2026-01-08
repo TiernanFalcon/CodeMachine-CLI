@@ -84,7 +84,10 @@ export class CoordinatorService {
    */
   async execute(script: string, options: CoordinatorOptions): Promise<CoordinationResult> {
     console.log(chalk.bold('\n🎭 Starting coordination...\n'));
-    console.log(chalk.dim(`Script: ${script}\n`));
+    // Only show truncated script preview to avoid exposing sensitive data
+    const scriptPreview = script.length > 100 ? script.substring(0, 97) + '...' : script;
+    logger.debug(`Script: ${script}`); // Full script only in debug logs
+    console.log(chalk.dim(`Script: ${scriptPreview}\n`));
 
     // Parse the script
     let plan;
