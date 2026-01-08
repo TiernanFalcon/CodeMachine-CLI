@@ -26,9 +26,41 @@ export function createMachine(config: MachineConfig): StateMachine {
 
   const FINAL_STATES: WorkflowState[] = ['completed', 'stopped', 'error'];
 
+  // Track if we're currently notifying to prevent race conditions
+  let isNotifying = false;
+  // Queue events received during notification
+  const pendingEvents: WorkflowEvent[] = [];
+
   function notify() {
-    for (const listener of listeners) {
-      listener(currentState, context);
+    // Guard against re-entrant notifications
+    if (isNotifying) {
+      return;
+    }
+
+    isNotifying = true;
+    try {
+      // Create a snapshot of listeners to prevent modification during iteration
+      const listenerSnapshot = [...listeners];
+      const stateSnapshot = currentState;
+      const contextSnapshot = { ...context };
+
+      for (const listener of listenerSnapshot) {
+        try {
+          listener(stateSnapshot, contextSnapshot);
+        } catch (listenerError) {
+          debug('[FSM] Error in state listener: %o', listenerError);
+        }
+      }
+    } finally {
+      isNotifying = false;
+    }
+
+    // Process any events that were queued during notification
+    while (pendingEvents.length > 0) {
+      const event = pendingEvents.shift();
+      if (event) {
+        send(event);
+      }
     }
   }
 
@@ -53,6 +85,13 @@ export function createMachine(config: MachineConfig): StateMachine {
   }
 
   function send(event: WorkflowEvent): void {
+    // Queue events if we're currently notifying to prevent race conditions
+    if (isNotifying) {
+      debug('[FSM] Queueing event %s during notification', event.type);
+      pendingEvents.push(event);
+      return;
+    }
+
     if (FINAL_STATES.includes(currentState)) {
       debug('[FSM] Ignoring event %s - machine in final state %s', event.type, currentState);
       return;

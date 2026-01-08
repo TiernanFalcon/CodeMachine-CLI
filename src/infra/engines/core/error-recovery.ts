@@ -539,7 +539,36 @@ export function toEngineError(error: unknown, engineId: string): EngineError {
     return error;
   }
 
-  const err = error instanceof Error ? error : new Error(String(error));
+  // Validate error input - handle null, undefined, and empty values
+  if (error === null || error === undefined) {
+    return new EngineError(
+      'Unknown error (null or undefined)',
+      'unknown',
+      engineId,
+      'abort',
+      undefined,
+      undefined
+    );
+  }
+
+  // Handle different error types with validation
+  let err: Error;
+  if (error instanceof Error) {
+    err = error;
+  } else if (typeof error === 'string') {
+    err = new Error(error || 'Empty error message');
+  } else if (typeof error === 'object') {
+    // Handle error-like objects with message property
+    const errorObj = error as { message?: unknown; toString?: () => string };
+    const message = typeof errorObj.message === 'string'
+      ? errorObj.message
+      : (typeof errorObj.toString === 'function' ? errorObj.toString() : 'Unknown error object');
+    err = new Error(message);
+  } else {
+    // Fallback for primitives (numbers, booleans, etc.)
+    err = new Error(String(error));
+  }
+
   const { category, strategy, retryAfterSeconds } = classifyError(err, engineId);
 
   return new EngineError(err.message, category, engineId, strategy, { retryAfterSeconds }, err);

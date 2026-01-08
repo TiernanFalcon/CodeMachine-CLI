@@ -25,6 +25,7 @@ import { calculateVisibleItems } from "./constants"
 import type { WorkflowEventBus } from "../../../../workflows/events/index.js"
 import { setAutonomousMode as persistAutonomousMode, loadControllerConfig } from "../../../../shared/workflows/index.js"
 import { setEngineSelectionContext, loadEngineConfig, saveEngineConfig } from "../../../../workflows/execution/engine-presets.js"
+import { getControlBus } from "../../../../workflows/control/index.js"
 import { debug } from "../../../../shared/logging/logger.js"
 import path from "path"
 
@@ -106,9 +107,10 @@ export function WorkflowShell(props: WorkflowShellProps) {
   const [errorMessage, setErrorMessage] = createSignal<string | null>(null)
   const isErrorModalActive = () => errorMessage() !== null
 
-  const handleWorkflowError = (data: { reason: string }) => {
+  const handleWorkflowError = (data: { error?: Error; reason?: string; agentId?: string }) => {
     // Only set error message - workflow status is already set via event bus adapter
-    setErrorMessage(data.reason)
+    const message = data.reason || data.error?.message || 'Unknown error'
+    setErrorMessage(message)
   }
 
   const handleErrorModalClose = () => {
@@ -121,11 +123,18 @@ export function WorkflowShell(props: WorkflowShellProps) {
     ui.actions.setAutonomousMode(data.autonomousMode)
   }
 
+  // Store unsubscribe functions for cleanup
+  let unsubscribers: (() => void)[] = []
+
   onMount(async () => {
-    ;(process as NodeJS.EventEmitter).on('workflow:error', handleWorkflowError)
-    ;(process as NodeJS.EventEmitter).on('workflow:stopping', handleStopping)
-    ;(process as NodeJS.EventEmitter).on('workflow:user-stop', handleUserStop)
-    ;(process as NodeJS.EventEmitter).on('workflow:mode-change', handleModeChange)
+    // Use control bus instead of process events
+    const controlBus = getControlBus()
+    unsubscribers = [
+      controlBus.on('error', (data) => handleWorkflowError(data)),
+      controlBus.on('stopping', handleStopping),
+      controlBus.on('user-stop', handleUserStop),
+      controlBus.on('mode-change', handleModeChange),
+    ]
 
     // Load initial state from config files
     const cmRoot = path.join(resolvePath(props.currentDir), '.codemachine')
@@ -161,10 +170,12 @@ export function WorkflowShell(props: WorkflowShellProps) {
   })
 
   onCleanup(() => {
-    ;(process as NodeJS.EventEmitter).off('workflow:error', handleWorkflowError)
-    ;(process as NodeJS.EventEmitter).off('workflow:stopping', handleStopping)
-    ;(process as NodeJS.EventEmitter).off('workflow:user-stop', handleUserStop)
-    ;(process as NodeJS.EventEmitter).off('workflow:mode-change', handleModeChange)
+    // Clean up control bus subscriptions
+    for (const unsubscribe of unsubscribers) {
+      unsubscribe()
+    }
+    unsubscribers = []
+
     if (adapter) {
       adapter.stop()
       adapter.disconnect()
@@ -289,18 +300,19 @@ export function WorkflowShell(props: WorkflowShellProps) {
 
   const handleStopConfirm = () => {
     setShowStopModal(false)
-    ;(process as NodeJS.EventEmitter).emit("workflow:user-stop")
-    ;(process as NodeJS.EventEmitter).emit("workflow:stop")
+    const controlBus = getControlBus()
+    controlBus.emit("user-stop")
+    controlBus.emit("stop")
   }
 
   const handleStopCancel = () => {
     setShowStopModal(false)
   }
 
-  // Unified prompt submit handler - uses single workflow:input event
+  // Unified prompt submit handler - uses control bus input event
   const handlePromptSubmit = (prompt: string) => {
     if (isWaitingForInput()) {
-      ;(process as NodeJS.EventEmitter).emit("workflow:input", { prompt: prompt || undefined })
+      getControlBus().emit("input", { prompt: prompt || undefined })
       setIsPromptBoxFocused(false)
     }
   }
@@ -308,14 +320,14 @@ export function WorkflowShell(props: WorkflowShellProps) {
   // Skip all remaining prompts
   const handleSkip = () => {
     if (isWaitingForInput()) {
-      ;(process as NodeJS.EventEmitter).emit("workflow:input", { skip: true })
+      getControlBus().emit("input", { skip: true })
       setIsPromptBoxFocused(false)
     }
   }
 
   // Pause the workflow (aborts current step)
   const pauseWorkflow = () => {
-    ;(process as NodeJS.EventEmitter).emit("workflow:pause")
+    getControlBus().emit("pause")
   }
 
   // Toggle autonomous mode on/off

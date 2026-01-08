@@ -6,6 +6,7 @@
  */
 
 import { debug } from '../../shared/logging/logger.js';
+import { getControlBus } from '../control/index.js';
 import type {
   InputProvider,
   InputContext,
@@ -24,7 +25,7 @@ export interface UserInputProviderOptions {
  * User input provider
  *
  * Waits for user to submit input via TUI.
- * Listens for 'workflow:input' process events.
+ * Uses WorkflowControlBus for event communication.
  */
 export class UserInputProvider implements InputProvider {
   readonly id = 'user';
@@ -32,8 +33,8 @@ export class UserInputProvider implements InputProvider {
   private emitter: InputEventEmitter;
   private resolver: ((result: InputResult) => void) | null = null;
   private currentContext: InputContext | null = null;
-  private inputListener: ((data?: { prompt?: string; skip?: boolean }) => void) | null = null;
-  private modeChangeListener: ((data: { autonomousMode: boolean }) => void) | null = null;
+  private unsubscribeInput: (() => void) | null = null;
+  private unsubscribeModeChange: (() => void) | null = null;
 
   constructor(options: UserInputProviderOptions) {
     this.emitter = options.emitter;
@@ -52,14 +53,16 @@ export class UserInputProvider implements InputProvider {
       monitoringId: context.stepOutput.monitoringId,
     });
 
-    // Set up listener for process events
-    this.inputListener = (data) => {
+    // Get control bus instance
+    const controlBus = getControlBus();
+
+    // Set up listener for input events
+    this.unsubscribeInput = controlBus.on('input', (data) => {
       this.handleInput(data);
-    };
-    process.on('workflow:input', this.inputListener);
+    });
 
     // Set up listener for mode change (switch to autonomous)
-    this.modeChangeListener = (data) => {
+    this.unsubscribeModeChange = controlBus.on('mode-change', (data) => {
       if (data.autonomousMode && this.resolver) {
         debug('[UserInput] Mode change to autonomous, signaling switch');
         this.emitter.emitCanceled();
@@ -67,22 +70,21 @@ export class UserInputProvider implements InputProvider {
         this.resolver = null;
         this.currentContext = null;
       }
-    };
-    process.on('workflow:mode-change', this.modeChangeListener);
+    });
 
     try {
       return await new Promise<InputResult>((resolve) => {
         this.resolver = resolve;
       });
     } finally {
-      // Clean up listeners
-      if (this.inputListener) {
-        process.removeListener('workflow:input', this.inputListener);
-        this.inputListener = null;
+      // Clean up listeners using unsubscribe functions
+      if (this.unsubscribeInput) {
+        this.unsubscribeInput();
+        this.unsubscribeInput = null;
       }
-      if (this.modeChangeListener) {
-        process.removeListener('workflow:mode-change', this.modeChangeListener);
-        this.modeChangeListener = null;
+      if (this.unsubscribeModeChange) {
+        this.unsubscribeModeChange();
+        this.unsubscribeModeChange = null;
       }
     }
   }
@@ -153,14 +155,15 @@ export class UserInputProvider implements InputProvider {
   }
 
   abort(): void {
-    if (this.inputListener) {
-      process.removeListener('workflow:input', this.inputListener);
-      this.inputListener = null;
+    // Clean up listeners using unsubscribe functions
+    if (this.unsubscribeInput) {
+      this.unsubscribeInput();
+      this.unsubscribeInput = null;
     }
 
-    if (this.modeChangeListener) {
-      process.removeListener('workflow:mode-change', this.modeChangeListener);
-      this.modeChangeListener = null;
+    if (this.unsubscribeModeChange) {
+      this.unsubscribeModeChange();
+      this.unsubscribeModeChange = null;
     }
 
     if (this.resolver) {

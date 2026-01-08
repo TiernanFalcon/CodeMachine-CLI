@@ -3,6 +3,7 @@ import { AgentLoggerService } from './logger.js';
 import { closeDB } from './db/connection.js';
 import * as logger from '../../shared/logging/logger.js';
 import { killAllActiveProcesses } from '../../infra/process/spawn.js';
+import { getControlBus } from '../../workflows/control/index.js';
 
 /**
  * Handles graceful cleanup of monitoring state on process termination
@@ -141,8 +142,8 @@ export class MonitoringCleanup {
     // Second Ctrl+C (after debounce): Stop workflow and exit
     logger.debug(`[${source}] Second Ctrl+C detected after ${timeSinceFirst}ms - stopping workflow and exiting`);
 
-    // Emit workflow:skip to abort the currently running step
-    (process as NodeJS.EventEmitter).emit('workflow:skip');
+    // Emit skip event via control bus to abort the currently running step
+    getControlBus().emit('skip');
 
     // Stop active agents
     await this.stopActiveAgents();

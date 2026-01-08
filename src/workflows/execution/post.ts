@@ -4,6 +4,7 @@ import { handleTriggerLogic } from '../behaviors/trigger/controller.js';
 import { handleCheckpointLogic } from '../behaviors/checkpoint/controller.js';
 import { handleErrorLogic } from '../behaviors/error/controller.js';
 import type { WorkflowEventEmitter } from '../events/index.js';
+import { getControlBus } from '../control/index.js';
 import { type ModuleStep, type WorkflowTemplate, isModuleStep } from '../templates/types.js';
 import { executeTriggerAgent } from './trigger.js';
 import type { ActiveLoop } from '../behaviors/skip.js';
@@ -54,8 +55,8 @@ export async function handlePostExec(options: HandlePostExecOptions): Promise<Ha
   const errorResult = await handleErrorLogic(step, stepOutput.output, cwd, emitter);
   if (errorResult?.shouldStopWorkflow) {
     emitter.setWorkflowStatus('error');
-    // Emit error event for toast display in UI
-    (process as NodeJS.EventEmitter).emit('workflow:error', { reason: errorResult.reason });
+    // Emit error event via control bus for toast display in UI
+    getControlBus().emit('error', { reason: errorResult.reason });
     return { shouldBreak: true, workflowShouldStop: true };
   }
 

@@ -19,6 +19,7 @@ import { Workflow } from "@tui/routes/workflow"
 import { Onboard } from "@tui/routes/onboard"
 import { homedir } from "os"
 import { WorkflowEventBus } from "../../workflows/events/index.js"
+import { getControlBus } from "../../workflows/control/index.js"
 import { MonitoringCleanup } from "../../agents/monitoring/index.js"
 import path from "path"
 import { createRequire } from "node:module"
@@ -256,7 +257,7 @@ export function App(props: { initialToast?: InitialToast }) {
     if (view() === "workflow") {
       MonitoringCleanup.registerWorkflowHandlers({
         onStop: () => {
-          ;(process as NodeJS.EventEmitter).emit('workflow:stopping')
+          getControlBus().emit('stopping')
         },
         onExit: () => {
           renderer.destroy()

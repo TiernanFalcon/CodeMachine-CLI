@@ -28,6 +28,7 @@ import {
   type InputEventEmitter,
   type InputContext,
 } from '../input/index.js';
+import { getControlBus } from '../control/index.js';
 import { executeStep } from './step.js';
 import { selectEngine, getPresetModel, startWorkflowContext, endWorkflowContext } from './engine.js';
 import { loadControllerConfig } from '../../shared/workflows/controller.js';
@@ -134,8 +135,14 @@ export class WorkflowRunner {
     }
     this.eventHandlersRegistered = true;
 
+    // Get the control bus instance (replaces process global event emitter)
+    const controlBus = getControlBus();
+
+    // Store unsubscribe functions for cleanup
+    const unsubscribers: (() => void)[] = [];
+
     // Pause listener with error boundary
-    const pauseHandler = () => {
+    unsubscribers.push(controlBus.on('pause', () => {
       try {
         debug('[Runner] Pause requested');
         this.pauseRequested = true;
@@ -143,22 +150,20 @@ export class WorkflowRunner {
       } catch (err) {
         debug('[Runner] Error in pause handler: %s', err);
       }
-    };
-    (process as NodeJS.EventEmitter).on('workflow:pause', pauseHandler);
+    }));
 
     // Skip listener with error boundary
-    const skipHandler = () => {
+    unsubscribers.push(controlBus.on('skip', () => {
       try {
         debug('[Runner] Skip requested');
         this.abortController?.abort();
       } catch (err) {
         debug('[Runner] Error in skip handler: %s', err);
       }
-    };
-    (process as NodeJS.EventEmitter).on('workflow:skip', skipHandler);
+    }));
 
     // Stop listener with error boundary
-    const stopHandler = () => {
+    unsubscribers.push(controlBus.on('stop', () => {
       try {
         debug('[Runner] Stop requested');
         this.abortController?.abort();
@@ -166,11 +171,10 @@ export class WorkflowRunner {
       } catch (err) {
         debug('[Runner] Error in stop handler: %s', err);
       }
-    };
-    (process as NodeJS.EventEmitter).on('workflow:stop', stopHandler);
+    }));
 
     // Mode change listener with error boundary
-    const modeChangeHandler = async (data: { autonomousMode: boolean }) => {
+    unsubscribers.push(controlBus.on('mode-change', async (data) => {
       try {
         debug('[Runner] Mode change: autoMode=%s', data.autonomousMode);
         // If in waiting state, let the provider's listener handle it
@@ -185,15 +189,13 @@ export class WorkflowRunner {
       } catch (err) {
         debug('[Runner] Error in mode change handler: %s', err);
       }
-    };
-    (process as NodeJS.EventEmitter).on('workflow:mode-change', modeChangeHandler);
+    }));
 
     // Create cleanup function to prevent memory leaks
     this.cleanupHandlers = () => {
-      (process as NodeJS.EventEmitter).removeListener('workflow:pause', pauseHandler);
-      (process as NodeJS.EventEmitter).removeListener('workflow:skip', skipHandler);
-      (process as NodeJS.EventEmitter).removeListener('workflow:stop', stopHandler);
-      (process as NodeJS.EventEmitter).removeListener('workflow:mode-change', modeChangeHandler);
+      for (const unsubscribe of unsubscribers) {
+        unsubscribe();
+      }
       this.eventHandlersRegistered = false;
     };
 
@@ -264,8 +266,9 @@ export class WorkflowRunner {
         this.emitter.setWorkflowStatus('error');
         const error = this.machine.context.lastError;
         if (error) {
-          (process as NodeJS.EventEmitter).emit('workflow:error', {
+          getControlBus().emit('error', {
             reason: error.message,
+            error,
           });
         }
       }
@@ -581,14 +584,15 @@ export class WorkflowRunner {
     this.emitter.setWorkflowStatus('running');
 
     // Track if mode switch was requested during execution
+    // Uses control bus instead of process global event emitter
+    const controlBus = getControlBus();
     let modeSwitchRequested: 'manual' | 'auto' | null = null;
-    const modeChangeHandler = (data: { autonomousMode: boolean }) => {
+    const unsubscribeModeChange = controlBus.on('mode-change', (data) => {
       debug('[Runner] Mode change during resumeWithInput: autoMode=%s', data.autonomousMode);
       modeSwitchRequested = data.autonomousMode ? 'auto' : 'manual';
       // Abort the current step execution
       this.abortController?.abort();
-    };
-    process.on('workflow:mode-change', modeChangeHandler);
+    });
 
     try {
       const output = await executeStep(step, this.cwd, {
@@ -632,7 +636,7 @@ export class WorkflowRunner {
       }
       this.machine.send({ type: 'STEP_ERROR', error: error as Error });
     } finally {
-      process.removeListener('workflow:mode-change', modeChangeHandler);
+      unsubscribeModeChange();
       this.abortController = null;
     }
   }

@@ -1,23 +1,34 @@
 import type { RGBA } from "@opentui/core"
 
-export type AgentStatus =
-  | "pending"
-  | "running"
-  | "completed"
-  | "failed"
-  | "skipped"
-  | "retrying"
-  | "paused"
-  | "checkpoint"
+// Import and re-export shared types from workflow layer (single source of truth)
+// This fixes the layer violation where workflow was importing from TUI
+import type {
+  AgentStatus,
+  AgentTelemetry,
+  WorkflowStatus,
+  LoopState,
+  CheckpointState,
+  QueuedPrompt,
+  InputState,
+  ChainedState,
+} from '../../../../../workflows/shared/types.js'
 
-export interface AgentTelemetry {
-  tokensIn: number
-  tokensOut: number
-  cached?: number
-  cost?: number
-  duration?: number
+// Re-export the shared types
+export type {
+  AgentStatus,
+  AgentTelemetry,
+  WorkflowStatus,
+  LoopState,
+  CheckpointState,
+  QueuedPrompt,
+  InputState,
+  ChainedState,
 }
 
+/**
+ * Full agent state with UI-specific properties
+ * Extends the shared AgentTelemetry with display state
+ */
 export interface AgentState {
   id: string
   name: string
@@ -40,30 +51,19 @@ export interface AgentState {
   currentAction?: string // Current action description
 }
 
+/**
+ * Sub-agent state with parent reference
+ */
 export interface SubAgentState extends AgentState {
   parentId: string
 }
 
+/**
+ * Triggered agent state with trigger info
+ */
 export interface TriggeredAgentState extends AgentState {
   triggeredBy: string
   triggerCondition?: string
-}
-
-export interface LoopState {
-  active: boolean
-  sourceAgent: string
-  backSteps: number
-  iteration: number
-  maxIterations: number
-  skipList: string[]
-  reason?: string
-}
-
-export type WorkflowStatus = "running" | "stopping" | "completed" | "stopped" | "checkpoint" | "paused" | "error" | "rate_limit_waiting"
-
-export interface CheckpointState {
-  active: boolean
-  reason?: string
 }
 
 /**
@@ -79,38 +79,11 @@ export interface RateLimitState {
   rateLimitedEngines?: string[]
 }
 
-export interface QueuedPrompt {
-  name: string
-  label: string  // description
-  content: string
-}
-
-/**
- * Unified input state - replaces both pause and chained prompts
- * When active, the workflow is waiting for user input before continuing
- */
-export interface InputState {
-  active: boolean
-  // Optional queued prompts (from workflow chained prompts config)
-  queuedPrompts?: QueuedPrompt[]
-  currentIndex?: number
-  monitoringId?: number
-}
-
 /** @deprecated Use InputState instead */
 export interface ChainedPromptInfo {
   name: string
   label: string
   content: string
-}
-
-/** @deprecated Use InputState instead */
-export interface ChainedState {
-  active: boolean
-  currentIndex: number
-  totalPrompts: number
-  nextPromptLabel: string | null
-  monitoringId?: number
 }
 
 export interface ExecutionRecord {
