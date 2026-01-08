@@ -7,6 +7,7 @@
 
 import { useKeyboard } from "@opentui/solid"
 import { debug } from "../../../../../shared/logging/logger.js"
+import { getControlBus } from "../../../../../workflows/control/index.js"
 import type { WorkflowState } from "../context/ui-state"
 
 export interface UseWorkflowKeyboardOptions {
@@ -89,8 +90,8 @@ export function useWorkflowKeyboard(options: UseWorkflowKeyboardOptions) {
         return
       }
 
-      // Normal case: skip current agent
-      ;(process as NodeJS.EventEmitter).emit("workflow:skip")
+      // Normal case: skip current agent via control bus
+      getControlBus().emit("skip")
       return
     }
 

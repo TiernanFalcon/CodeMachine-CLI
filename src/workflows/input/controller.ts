@@ -18,6 +18,7 @@ import {
   formatControllerHeader,
   formatControllerFooter,
 } from '../../shared/formatters/outputMarkers.js';
+import { getControlBus } from '../control/index.js';
 import type { ControllerConfig } from '../../shared/workflows/template.js';
 import type {
   InputProvider,
@@ -55,7 +56,7 @@ export class ControllerInputProvider implements InputProvider {
   private cmRoot: string;
   private aborted = false;
   private abortController: AbortController | null = null;
-  private modeChangeListener: ((data: { autonomousMode: boolean }) => void) | null = null;
+  private unsubscribeModeChange: (() => void) | null = null;
 
   constructor(options: ControllerInputProviderOptions) {
     this.emitter = options.emitter;
@@ -80,17 +81,17 @@ export class ControllerInputProvider implements InputProvider {
     // Set up abort controller for this execution
     this.abortController = new AbortController();
 
-    // Listen for mode change (user switches to manual)
+    // Listen for mode change (user switches to manual) via control bus
+    const controlBus = getControlBus();
     let switchToManual = false;
-    this.modeChangeListener = (data) => {
+    this.unsubscribeModeChange = controlBus.on('mode-change', (data) => {
       if (!data.autonomousMode) {
         debug('[Controller] Mode change to manual requested, aborting execution');
         switchToManual = true;
         // Abort the current execution immediately
         this.abortController?.abort();
       }
-    };
-    process.on('workflow:mode-change', this.modeChangeListener);
+    });
 
     try {
       // Build prompt for controller with cleaned step output
@@ -223,11 +224,11 @@ Review the output above and respond appropriately, or use ACTION: NEXT to procee
       }
       throw error;
     } finally {
-      // Clean up
+      // Clean up using unsubscribe function
       this.abortController = null;
-      if (this.modeChangeListener) {
-        process.removeListener('workflow:mode-change', this.modeChangeListener);
-        this.modeChangeListener = null;
+      if (this.unsubscribeModeChange) {
+        this.unsubscribeModeChange();
+        this.unsubscribeModeChange = null;
       }
     }
   }
@@ -250,9 +251,10 @@ Review the output above and respond appropriately, or use ACTION: NEXT to procee
     this.abortController?.abort();
     this.abortController = null;
 
-    if (this.modeChangeListener) {
-      process.removeListener('workflow:mode-change', this.modeChangeListener);
-      this.modeChangeListener = null;
+    // Clean up using unsubscribe function
+    if (this.unsubscribeModeChange) {
+      this.unsubscribeModeChange();
+      this.unsubscribeModeChange = null;
     }
 
     this.emitter.emitCanceled();

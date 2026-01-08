@@ -21,6 +21,7 @@ import {
 import { registry } from '../../infra/engines/index.js';
 import { MonitoringCleanup } from '../../agents/monitoring/index.js';
 import { WorkflowEventBus, WorkflowEventEmitter } from '../events/index.js';
+import { getControlBus } from '../control/index.js';
 import { validateSpecification } from '../../runtime/services/index.js';
 import { WorkflowRunner } from './runner.js';
 import {
@@ -192,8 +193,9 @@ export async function runWorkflow(options: RunWorkflowOptions = {}): Promise<voi
   } catch (error) {
     debug('[Workflow] Error: %s', (error as Error).message);
     emitter.setWorkflowStatus('error');
-    (process as NodeJS.EventEmitter).emit('workflow:error', {
+    getControlBus().emit('error', {
       reason: (error as Error).message,
+      error: error as Error,
     });
     throw error;
   } finally {

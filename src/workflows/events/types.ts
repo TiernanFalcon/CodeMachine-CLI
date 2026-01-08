@@ -15,7 +15,7 @@ import type {
   WorkflowStatus,
   SubAgentState,
   TriggeredAgentState,
-} from '../../cli/tui/routes/workflow/state/types.js';
+} from '../shared/types.js';
 
 /**
  * Agent information for adding to UI
