@@ -1,5 +1,5 @@
 import { promises as fs } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve, normalize, sep } from 'node:path';
 
 import type { MemoryEntry } from '../../agents/index.js';
 
@@ -77,11 +77,39 @@ export class MemoryAdapter {
 
   private agentFilePath(agentId: string): string {
     const sanitized = this.sanitizeAgentId(agentId);
-    return join(this.baseDir, `${sanitized}.json`);
+    const filePath = join(this.baseDir, `${sanitized}.json`);
+
+    // Validate the resolved path stays within baseDir to prevent path traversal
+    const resolvedPath = normalize(resolve(filePath));
+    const resolvedBase = normalize(resolve(this.baseDir));
+    const baseWithSep = resolvedBase.endsWith(sep) ? resolvedBase : resolvedBase + sep;
+
+    if (!resolvedPath.startsWith(baseWithSep) && resolvedPath !== resolvedBase) {
+      throw new Error(`Security: Path traversal detected for agentId "${agentId}"`);
+    }
+
+    return filePath;
   }
 
   private sanitizeAgentId(agentId: string): string {
-    return agentId.toLowerCase().replace(/[^A-Za-z0-9_-]+/g, '-');
+    // Remove any characters that could be used for path traversal or injection
+    // Only allow alphanumeric, underscore, and hyphen
+    const sanitized = agentId.toLowerCase().replace(/[^a-z0-9_-]+/g, '-');
+
+    // Reject empty or excessively long IDs
+    if (!sanitized || sanitized.length === 0) {
+      throw new Error('Invalid agentId: empty after sanitization');
+    }
+    if (sanitized.length > 255) {
+      throw new Error('Invalid agentId: exceeds maximum length');
+    }
+
+    // Reject IDs that are just dashes (could result from malicious input)
+    if (/^-+$/.test(sanitized)) {
+      throw new Error('Invalid agentId: contains only invalid characters');
+    }
+
+    return sanitized;
   }
 
   private async readEntriesFromFile(filePath: string): Promise<MemoryEntry[]> {
