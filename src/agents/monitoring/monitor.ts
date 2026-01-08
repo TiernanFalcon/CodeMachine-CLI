@@ -1,3 +1,4 @@
+import type { Database } from 'bun:sqlite';
 import type { ParsedTelemetry } from '../../shared/telemetry/index.js';
 import { getDB } from './db/connection.js';
 import { AgentRepository } from './db/repository.js';
@@ -5,23 +6,42 @@ import type { AgentRecord, AgentQueryFilters, AgentStatus, RegisterAgentInput } 
 import * as logger from '../../shared/logging/logger.js';
 
 /**
- * Central singleton service for monitoring agent lifecycle
+ * Dependencies for AgentMonitorService
+ */
+export interface AgentMonitorDependencies {
+  db?: Database;
+  repository?: AgentRepository;
+}
+
+/**
+ * Central service for monitoring agent lifecycle
  * Tracks all agent executions (workflow, CLI, orchestrated)
+ *
+ * Prefer using createAgentMonitor() for new code to enable dependency injection.
+ * getInstance() is maintained for backward compatibility.
  */
 export class AgentMonitorService {
   private static instance: AgentMonitorService | null = null;
   private static creating = false;
   private repository: AgentRepository;
 
-  private constructor() {
-    const db = getDB();
-    this.repository = new AgentRepository(db);
+  /**
+   * Constructor accepts optional dependencies for DI
+   * @param deps - Optional dependencies (db or repository)
+   */
+  constructor(deps?: AgentMonitorDependencies) {
+    if (deps?.repository) {
+      this.repository = deps.repository;
+    } else {
+      const db = deps?.db ?? getDB();
+      this.repository = new AgentRepository(db);
+    }
     logger.debug('AgentMonitorService initialized');
   }
 
   /**
    * Get singleton instance
-   * Uses a creation guard to prevent partial initialization if constructor throws
+   * @deprecated Prefer createAgentMonitor() for new code to enable dependency injection
    */
   static getInstance(): AgentMonitorService {
     if (!AgentMonitorService.instance) {
@@ -44,6 +64,14 @@ export class AgentMonitorService {
    */
   static resetInstance(): void {
     AgentMonitorService.instance = null;
+  }
+
+  /**
+   * Set a custom instance (for testing with mocks)
+   * @internal
+   */
+  static setInstance(instance: AgentMonitorService): void {
+    AgentMonitorService.instance = instance;
   }
 
   /**
@@ -372,4 +400,24 @@ export class AgentMonitorService {
 export interface AgentTreeNode {
   agent: AgentRecord;
   children: AgentTreeNode[];
+}
+
+/**
+ * Factory function to create AgentMonitorService with dependency injection
+ * Preferred over getInstance() for new code and testing
+ *
+ * @param deps - Optional dependencies for testing
+ * @returns A new AgentMonitorService instance
+ *
+ * @example
+ * // Production usage
+ * const monitor = createAgentMonitor();
+ *
+ * @example
+ * // Testing with mock repository
+ * const mockRepo = new MockAgentRepository();
+ * const monitor = createAgentMonitor({ repository: mockRepo });
+ */
+export function createAgentMonitor(deps?: AgentMonitorDependencies): AgentMonitorService {
+  return new AgentMonitorService(deps);
 }

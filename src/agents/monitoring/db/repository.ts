@@ -74,7 +74,9 @@ export class AgentRepository {
       ORDER BY a.id ASC
     `).all() as AgentRow[];
 
-    return rows.map((row: AgentRow) => this.toRecord(row));
+    // Batch load all children in a single query to avoid N+1 problem
+    const childrenMap = this.getAllChildrenMap();
+    return rows.map((row: AgentRow) => this.toRecordWithChildren(row, childrenMap));
   }
 
   getChildren(parentId: number): AgentRecord[] {
@@ -204,6 +206,60 @@ export class AgentRepository {
   getMaxId(): number {
     const result = this.db.prepare('SELECT MAX(id) as maxId FROM agents').get() as { maxId: number | null };
     return result.maxId ?? 0;
+  }
+
+  /**
+   * Load all parent-child relationships in a single query.
+   * Returns a map of parentId -> array of childIds.
+   */
+  private getAllChildrenMap(): Map<number, number[]> {
+    const rows = this.db.prepare('SELECT id, parent_id FROM agents WHERE parent_id IS NOT NULL').all() as Array<{ id: number; parent_id: number }>;
+    const map = new Map<number, number[]>();
+    for (const row of rows) {
+      const existing = map.get(row.parent_id);
+      if (existing) {
+        existing.push(row.id);
+      } else {
+        map.set(row.parent_id, [row.id]);
+      }
+    }
+    return map;
+  }
+
+  /**
+   * Convert row to record using a pre-loaded children map (avoids N+1 queries).
+   */
+  private toRecordWithChildren(row: AgentRow, childrenMap: Map<number, number[]>): AgentRecord {
+    const children = childrenMap.get(row.id) ?? [];
+
+    return {
+      id: row.id,
+      name: row.name,
+      engine: row.engine ?? undefined,
+      status: row.status as AgentRecord['status'],
+      parentId: row.parent_id ?? undefined,
+      pid: row.pid ?? undefined,
+      startTime: row.start_time,
+      endTime: row.end_time ?? undefined,
+      duration: row.duration ?? undefined,
+      prompt: row.prompt,
+      logPath: row.log_path,
+      error: row.error ?? undefined,
+      engineProvider: row.engine_provider ?? undefined,
+      modelName: row.model_name ?? undefined,
+      sessionId: row.session_id ?? undefined,
+      children,
+      telemetry: row.tokens_in !== null && row.tokens_out !== null
+        ? {
+            tokensIn: row.tokens_in,
+            tokensOut: row.tokens_out,
+            cached: row.cached_tokens ?? undefined,
+            cost: row.cost ?? undefined,
+            cacheCreationTokens: row.cache_creation_tokens ?? undefined,
+            cacheReadTokens: row.cache_read_tokens ?? undefined,
+          }
+        : undefined,
+    };
   }
 
   private toRecord(row: AgentRow): AgentRecord {

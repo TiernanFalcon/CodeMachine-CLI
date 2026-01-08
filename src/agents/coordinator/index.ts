@@ -10,7 +10,7 @@
  * The executor handles file loading, template loading, and prompt building
  */
 
-export { CoordinatorService } from './service.js';
+export { CoordinatorService, createCoordinator, type CoordinatorDependencies } from './service.js';
 export { CoordinatorParser } from './parser.js';
 export { CoordinationExecutor } from './execution.js';
 export type {
