@@ -1,6 +1,6 @@
 # Run type checking
 echo "🔍 Running type check..."
-npx tsc --noEmit || exit 1
+npm run typecheck || exit 1
 
 # Run linting on staged TypeScript files (if any)
 STAGED_TS_FILES=$(git diff --cached --name-only --diff-filter=ACM -- '*.ts' '*.tsx' 2>/dev/null | tr '\n' ' ')

@@ -1,4 +1,12 @@
 import type { CoordinationPlan, CommandGroup, AgentCommand, CoordinationMode } from './types';
+import {
+  validateAgentName,
+  validateInputPath,
+  validatePrompt,
+  validateOptionKey,
+  sanitizeOptionValue,
+  INPUT_LIMITS,
+} from '../../shared/utils/sanitize.js';
 
 /**
  * Parse coordination script into coordination plan
@@ -131,6 +139,7 @@ export class CoordinatorParser {
 
   /**
    * Parse a single command: "agent-name 'prompt text'" or enhanced syntax
+   * Validates agent names and prompts for security
    */
   private parseCommand(commandStr: string): AgentCommand {
     const trimmed = commandStr.trim();
@@ -140,11 +149,14 @@ export class CoordinatorParser {
     const enhancedMatch = trimmed.match(/^(\S+)\[([^\]]+)\](?:\s+(.+))?$/);
 
     if (enhancedMatch) {
-      const name = enhancedMatch[1];
+      const rawName = enhancedMatch[1];
       const optionsStr = enhancedMatch[2];
       const trailingPart = enhancedMatch[3]; // Everything after brackets
 
-      // Parse options from brackets
+      // Validate agent name (throws on invalid)
+      const name = validateAgentName(rawName);
+
+      // Parse options from brackets (with validation)
       const options = this.parseOptions(optionsStr);
 
       // Extract prompt from trailing part if present
@@ -153,10 +165,16 @@ export class CoordinatorParser {
         trailingPrompt = this.extractQuotedString(trailingPart.trim());
       }
 
+      // Validate and combine prompts
+      const finalPrompt = options.prompt || trailingPrompt || undefined;
+      if (finalPrompt) {
+        validatePrompt(finalPrompt);
+      }
+
       // Build command
       return {
         name,
-        prompt: options.prompt || trailingPrompt || undefined,
+        prompt: finalPrompt,
         input: options.input,
         tail: options.tail,
         options: options.extra
@@ -167,22 +185,27 @@ export class CoordinatorParser {
     // Try to extract quoted string for prompt
     const spaceIndex = trimmed.indexOf(' ');
     if (spaceIndex > 0) {
-      const name = trimmed.substring(0, spaceIndex);
+      const rawName = trimmed.substring(0, spaceIndex);
       const rest = trimmed.substring(spaceIndex + 1).trim();
       const prompt = this.extractQuotedString(rest);
 
+      // Validate agent name
+      const name = validateAgentName(rawName);
+
       if (prompt !== null) {
+        validatePrompt(prompt);
         return { name, prompt };
       }
 
       // No quotes found, treat entire rest as prompt
+      validatePrompt(rest);
       return { name, prompt: rest };
     }
 
     // No prompt - just agent name (allowed now with optional prompt)
     if (trimmed.match(/^\S+$/)) {
       return {
-        name: trimmed
+        name: validateAgentName(trimmed)
       };
     }
 
@@ -233,6 +256,7 @@ export class CoordinatorParser {
   /**
    * Parse options string from brackets
    * Format: key:value,key:value
+   * Validates all option keys and values for security
    */
   private parseOptions(optionsStr: string): {
     prompt?: string;
@@ -240,6 +264,11 @@ export class CoordinatorParser {
     tail?: number;
     extra: Record<string, unknown>;
   } {
+    // Validate overall options string length
+    if (optionsStr.length > INPUT_LIMITS.OPTION_VALUE * 10) {
+      throw new Error('Options string exceeds maximum length');
+    }
+
     const result: {
       prompt?: string;
       input?: string[];
@@ -263,11 +292,11 @@ export class CoordinatorParser {
         continue;
       }
 
-      const key = trimmedPart.substring(0, colonIndex).trim();
+      const rawKey = trimmedPart.substring(0, colonIndex).trim();
       const value = trimmedPart.substring(colonIndex + 1).trim();
 
-      // Handle special keys
-      switch (key) {
+      // Handle special keys (no validation needed for known keys)
+      switch (rawKey) {
         case 'input':
           result.input = this.parseInput(value);
           break;
@@ -277,9 +306,12 @@ export class CoordinatorParser {
         case 'prompt':
           result.prompt = this.unquote(value);
           break;
-        default:
-          // Store in extra
-          result.extra[key] = this.unquote(value);
+        default: {
+          // Validate custom option keys
+          const key = validateOptionKey(rawKey);
+          // Sanitize and store in extra
+          result.extra[key] = sanitizeOptionValue(this.unquote(value));
+        }
       }
     }
 
@@ -288,11 +320,16 @@ export class CoordinatorParser {
 
   /**
    * Parse input value (semicolon-separated file paths)
+   * Validates each path to prevent path traversal
    */
   private parseInput(value: string): string[] {
     const unquoted = this.unquote(value);
-    // Split by semicolon
-    return unquoted.split(';').map(p => p.trim()).filter(p => p.length > 0);
+    // Split by semicolon and validate each path
+    return unquoted
+      .split(';')
+      .map(p => p.trim())
+      .filter(p => p.length > 0)
+      .map(p => validateInputPath(p)); // Throws on invalid paths
   }
 
   /**

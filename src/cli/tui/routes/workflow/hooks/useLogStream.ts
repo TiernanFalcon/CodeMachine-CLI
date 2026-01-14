@@ -8,7 +8,7 @@
 import { createSignal, createEffect, onCleanup } from "solid-js"
 import { AgentMonitorService } from "../../../../../agents/monitoring/monitor.js"
 import type { AgentRecord } from "../../../../../agents/monitoring/types.js"
-import { readFileSync, existsSync, statSync } from "fs"
+import { existsSync, statSync, createReadStream } from "fs"
 
 // Debug logging (writes to tui-debug.log when DEBUG is enabled)
 const DEBUG_ENABLED = process.env.DEBUG &&
@@ -35,32 +35,44 @@ export interface LogStreamResult {
 }
 
 /**
- * Read log file and return array of lines
+ * Read new content from log file starting at byte offset
+ * Returns { content, newSize } for incremental updates
  */
-function readLogFile(path: string): string[] {
-  try {
-    if (!existsSync(path)) {
-      return []
-    }
-    const content = readFileSync(path, "utf-8")
-    return content.split("\n")
-  } catch {
-    return []
-  }
-}
+function readLogIncremental(filePath: string, fromByte: number): Promise<{ content: string; newSize: number }> {
+  return new Promise((resolve) => {
+    try {
+      if (!existsSync(filePath)) {
+        resolve({ content: '', newSize: 0 })
+        return
+      }
 
-/**
- * Get file size in bytes
- */
-function getFileSize(path: string): number {
-  try {
-    if (!existsSync(path)) {
-      return 0
+      const stats = statSync(filePath)
+      const currentSize = stats.size
+
+      // No new content
+      if (currentSize <= fromByte) {
+        resolve({ content: '', newSize: currentSize })
+        return
+      }
+
+      // Read only new bytes
+      const chunks: Buffer[] = []
+      const stream = createReadStream(filePath, {
+        start: fromByte,
+        end: currentSize - 1,
+        encoding: undefined
+      })
+
+      stream.on('data', (chunk: Buffer) => chunks.push(chunk))
+      stream.on('end', () => {
+        const content = Buffer.concat(chunks).toString('utf-8')
+        resolve({ content, newSize: currentSize })
+      })
+      stream.on('error', () => resolve({ content: '', newSize: fromByte }))
+    } catch {
+      resolve({ content: '', newSize: fromByte })
     }
-    return statSync(path).size
-  } catch {
-    return 0
-  }
+  })
 }
 
 /**
@@ -93,6 +105,11 @@ export function useLogStream(monitoringAgentId: () => number | undefined): LogSt
     let mounted = true
     let pollInterval: NodeJS.Timeout | undefined
     let retryInterval: NodeJS.Timeout | undefined
+
+    // Incremental read state
+    let lastReadByte = 0
+    let accumulatedLines: string[] = []
+    let partialLine = '' // Handle lines split across reads
 
     /**
      * Try to get agent from registry with retries
@@ -160,9 +177,10 @@ export function useLogStream(monitoringAgentId: () => number | undefined): LogSt
     }
 
     /**
-     * Update log lines from file
+     * Update log lines from file using incremental reads
+     * Only reads new bytes since last poll
      */
-    function updateLogs(logPath: string): boolean {
+    async function updateLogsIncremental(logPath: string): Promise<boolean> {
       if (!mounted) return false
 
       try {
@@ -171,16 +189,35 @@ export function useLogStream(monitoringAgentId: () => number | undefined): LogSt
           return false
         }
 
-        const fileLines = readLogFile(logPath)
-        const filteredLines = filterHeaderLines(fileLines)
-        const thinking = extractLatestThinking(fileLines)
+        const { content, newSize } = await readLogIncremental(logPath, lastReadByte)
+
+        // No new content
+        if (!content && lastReadByte > 0) {
+          return true // File exists, just no updates
+        }
+
+        if (content) {
+          // Prepend any partial line from previous read
+          const fullContent = partialLine + content
+          const newLines = fullContent.split('\n')
+
+          // Last element might be partial (no trailing newline)
+          partialLine = newLines.pop() ?? ''
+
+          // Append new complete lines
+          accumulatedLines = [...accumulatedLines, ...newLines]
+          lastReadByte = newSize
+        }
+
         if (mounted) {
+          const filteredLines = filterHeaderLines(accumulatedLines)
+          const thinking = extractLatestThinking(accumulatedLines)
           setLines(filteredLines)
           setLatestThinking(thinking)
-          setFileSize(getFileSize(logPath))
+          setFileSize(newSize)
           setIsConnecting(false)
           setError(null)
-          logDebug('updateLogs: success, lines=%d size=%d', filteredLines.length, getFileSize(logPath))
+          logDebug('updateLogs: success, lines=%d size=%d', filteredLines.length, newSize)
           return true
         }
       } catch (err) {
@@ -212,8 +249,13 @@ export function useLogStream(monitoringAgentId: () => number | undefined): LogSt
       setAgent(agentRecord)
       setError(null)
 
+      // Reset incremental state for new agent
+      lastReadByte = 0
+      accumulatedLines = []
+      partialLine = ''
+
       // Initial log read
-      const success = updateLogs(agentRecord.logPath)
+      const success = await updateLogsIncremental(agentRecord.logPath)
       logDebug('initialize: initial updateLogs success=%s', success)
 
       if (mounted) {
@@ -227,7 +269,7 @@ export function useLogStream(monitoringAgentId: () => number | undefined): LogSt
         const MAX_RETRIES = 240 // 120 seconds
         let currentRetry = 0
 
-        retryInterval = setInterval(() => {
+        retryInterval = setInterval(async () => {
           if (!mounted) {
             clearInterval(retryInterval)
             return
@@ -243,7 +285,7 @@ export function useLogStream(monitoringAgentId: () => number | undefined): LogSt
             return
           }
 
-          const retrySuccess = updateLogs(agentRecord.logPath)
+          const retrySuccess = await updateLogsIncremental(agentRecord.logPath)
 
           if (retrySuccess) {
             logDebug('initialize: retry %d succeeded, starting polling', currentRetry)
@@ -266,7 +308,7 @@ export function useLogStream(monitoringAgentId: () => number | undefined): LogSt
     }
 
     /**
-     * Start polling for log updates
+     * Start polling for log updates (incremental reads)
      */
     function startPolling(logPath: string): void {
       logDebug('startPolling: path=%s', logPath)
@@ -274,10 +316,10 @@ export function useLogStream(monitoringAgentId: () => number | undefined): LogSt
         clearInterval(pollInterval)
       }
 
-      // 500ms polling
-      pollInterval = setInterval(() => {
+      // 500ms polling with incremental reads
+      pollInterval = setInterval(async () => {
         if (mounted) {
-          updateLogs(logPath)
+          await updateLogsIncremental(logPath)
         }
       }, 500)
     }

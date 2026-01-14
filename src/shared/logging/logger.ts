@@ -94,3 +94,53 @@ export function error(message: string, ...args: unknown[]): void {
     process.stderr.write(formatted + '\n');
   }
 }
+
+/** Pattern to detect sensitive keys in objects */
+const SENSITIVE_KEY_PATTERN = /^(password|secret|token|apiKey|api_key|credential|auth|key|bearer)$/i;
+
+/**
+ * Redact sensitive values from objects before logging
+ */
+function redactSensitiveValues(obj: unknown): unknown {
+  if (obj === null || obj === undefined) {
+    return obj;
+  }
+
+  if (typeof obj === 'string') {
+    // Redact strings that look like API keys or tokens
+    if (obj.length > 20 && /^[A-Za-z0-9_-]+$/.test(obj)) {
+      return '[REDACTED]';
+    }
+    return obj;
+  }
+
+  if (Array.isArray(obj)) {
+    return obj.map(item => redactSensitiveValues(item));
+  }
+
+  if (typeof obj === 'object') {
+    const result: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(obj)) {
+      if (SENSITIVE_KEY_PATTERN.test(key)) {
+        result[key] = '[REDACTED]';
+      } else if (typeof value === 'object') {
+        result[key] = redactSensitiveValues(value);
+      } else {
+        result[key] = value;
+      }
+    }
+    return result;
+  }
+
+  return obj;
+}
+
+/**
+ * Debug log with automatic redaction of sensitive data
+ */
+export function debugSafe(message: string, ...args: unknown[]): void {
+  if (shouldLog('debug')) {
+    const safeArgs = args.map(arg => redactSensitiveValues(arg));
+    writeDebugLog(`[DEBUG] ${message}`, ...safeArgs);
+  }
+}

@@ -1,7 +1,8 @@
-import { rm, writeFile, mkdir, readFile } from 'node:fs/promises';
+import { rm, mkdir } from 'node:fs/promises';
 
 import { resolveGeminiConfigDir, getApiKeyPath } from './config.js';
 import { metadata } from './metadata.js';
+import { writeSecureCredential, readSecureCredential } from '../../../../shared/utils/credentials.js';
 
 export interface GeminiAuthOptions {
   configDir?: string;
@@ -21,14 +22,13 @@ export async function getApiKey(options?: GeminiAuthOptions): Promise<string | n
     return process.env.GEMINI_API_KEY;
   }
 
-  // Check config file
+  // Check config file (encrypted)
   const configDir = resolveGeminiConfigDir(options);
   const apiKeyPath = getApiKeyPath(configDir);
 
   try {
-    const content = await readFile(apiKeyPath, 'utf8');
-    const config = JSON.parse(content);
-    return config.apiKey || null;
+    const config = await readSecureCredential(apiKeyPath);
+    return (config?.apiKey as string) || null;
   } catch {
     return null;
   }
@@ -73,7 +73,7 @@ export async function ensureAuth(options?: GeminiAuthOptions): Promise<boolean> 
     const configDir = resolveGeminiConfigDir(options);
     await mkdir(configDir, { recursive: true });
     const apiKeyPath = getApiKeyPath(configDir);
-    await writeFile(apiKeyPath, JSON.stringify({ apiKey: 'test-key' }), 'utf8');
+    await writeSecureCredential(apiKeyPath, { apiKey: 'test-key' });
     return true;
   }
 
@@ -117,13 +117,13 @@ export async function ensureAuth(options?: GeminiAuthOptions): Promise<boolean> 
     throw new Error('Invalid Gemini API key.');
   }
 
-  // Save the key
+  // Save the key (encrypted)
   const configDir = resolveGeminiConfigDir(options);
   await mkdir(configDir, { recursive: true });
   const apiKeyPath = getApiKeyPath(configDir);
-  await writeFile(apiKeyPath, JSON.stringify({ apiKey }, null, 2), 'utf8');
+  await writeSecureCredential(apiKeyPath, { apiKey });
 
-  console.log(`\n✅ API key saved to: ${apiKeyPath}`);
+  console.log(`\n✅ API key saved securely to: ${apiKeyPath}`);
   console.log(`────────────────────────────────────────────────────────────\n`);
 
   return true;

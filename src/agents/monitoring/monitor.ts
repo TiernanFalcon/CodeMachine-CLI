@@ -272,10 +272,40 @@ export class AgentMonitorService {
 
   /**
    * Build hierarchical tree structure for display
+   * Uses single query + in-memory tree construction (O(n) instead of O(n²))
    */
   buildAgentTree(): AgentTreeNode[] {
-    const roots = this.getRootAgents();
-    return roots.map(root => this.buildTreeNode(root));
+    const allAgents = this.getAllAgents();
+
+    // Build lookup maps in O(n)
+    const agentMap = new Map<number, AgentRecord>();
+    const childrenMap = new Map<number, AgentRecord[]>();
+    const roots: AgentRecord[] = [];
+
+    for (const agent of allAgents) {
+      agentMap.set(agent.id, agent);
+      if (!agent.parentId) {
+        roots.push(agent);
+      } else {
+        const siblings = childrenMap.get(agent.parentId);
+        if (siblings) {
+          siblings.push(agent);
+        } else {
+          childrenMap.set(agent.parentId, [agent]);
+        }
+      }
+    }
+
+    // Build tree recursively using in-memory maps
+    const buildNode = (agent: AgentRecord): AgentTreeNode => {
+      const children = childrenMap.get(agent.id) ?? [];
+      return {
+        agent,
+        children: children.map(child => buildNode(child))
+      };
+    };
+
+    return roots.map(root => buildNode(root));
   }
 
   /**
@@ -375,14 +405,6 @@ export class AgentMonitorService {
       }
       return false;
     }
-  }
-
-  private buildTreeNode(agent: AgentRecord): AgentTreeNode {
-    const children = this.getChildren(agent.id);
-    return {
-      agent,
-      children: children.map(child => this.buildTreeNode(child))
-    };
   }
 
   /**

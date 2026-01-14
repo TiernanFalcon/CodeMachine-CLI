@@ -296,13 +296,12 @@ export class WorkflowRunner {
     this.emitter.logMessage(uniqueAgentId, '═'.repeat(80));
     this.emitter.logMessage(uniqueAgentId, `${step.agentName} ${isResuming ? 'resumed work.' : 'started to work.'}`);
 
-    // Reset behavior file
+    // Reset behavior file (async to avoid blocking hot path)
     const behaviorFile = path.join(this.cwd, '.codemachine/memory/behavior.json');
     const behaviorDir = path.dirname(behaviorFile);
-    if (!fs.existsSync(behaviorDir)) {
-      fs.mkdirSync(behaviorDir, { recursive: true });
-    }
-    fs.writeFileSync(behaviorFile, JSON.stringify({ action: 'continue' }, null, 2));
+    fs.promises.mkdir(behaviorDir, { recursive: true })
+      .then(() => fs.promises.writeFile(behaviorFile, JSON.stringify({ action: 'continue' }, null, 2)))
+      .catch(() => {}); // Fire-and-forget, non-critical
 
     // Determine engine
     const engineType = await selectEngine(step, this.emitter, uniqueAgentId);
