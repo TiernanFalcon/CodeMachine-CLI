@@ -9,6 +9,7 @@ package-lock.json
 
 # Ignore specific dotfiles/folders
 .codemachine
+.codemachine.bk*
 .codemachine/memory
 .env
 .env.example
@@ -29,3 +30,8 @@ src/shared/runtime/resource-manifest.ts
 
 # MkDocs build output
 site/
+_bmad
+_bmad-*
+
+.idea
+*_trynul

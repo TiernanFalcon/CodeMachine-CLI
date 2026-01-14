@@ -5,16 +5,20 @@ import { spawnProcess } from '../../../../process/spawn.js';
 import { buildCursorExecCommand } from './commands.js';
 import { metadata } from '../metadata.js';
 import { expandHomeDir } from '../../../../../shared/utils/index.js';
+import { ENV } from '../config.js';
 import { formatThinking, formatCommand, formatResult, formatStatus } from '../../../../../shared/formatters/outputMarkers.js';
 import { debug } from '../../../../../shared/logging/logger.js';
 
 export interface RunCursorOptions {
   prompt: string;
   workingDir: string;
+  resumeSessionId?: string;
+  resumePrompt?: string;
   model?: string;
   env?: NodeJS.ProcessEnv;
   onData?: (chunk: string) => void;
   onErrorData?: (chunk: string) => void;
+  onSessionId?: (sessionId: string) => void;
   abortSignal?: AbortSignal;
   timeout?: number; // Timeout in milliseconds (default: 1800000ms = 30 minutes)
 }
@@ -24,13 +28,25 @@ export interface RunCursorResult {
   stderr: string;
 }
 
-const ANSI_ESCAPE_SEQUENCE = new RegExp(String.raw`\u001B\[[0-9;?]*[ -/]*[@-~]`, 'g');
-
 // Track tool names for associating with results
 const toolNameMap = new Map<string, string>();
 
 // Track accumulated thinking text for delta updates
 let accumulatedThinking = '';
+
+/**
+ * Build the final resume prompt combining steering instruction with user message
+ */
+function buildResumePrompt(userPrompt?: string): string {
+  const defaultPrompt = 'Continue from where you left off.';
+
+  if (!userPrompt) {
+    return defaultPrompt;
+  }
+
+  // Combine steering instruction with user's message
+  return `[USER STEERING] The user paused this session to give you new direction. Continue from where you left off, but prioritize the user's request: "${userPrompt}"`;
+}
 
 /**
  * Formats a Cursor stream-json line for display
@@ -68,14 +84,45 @@ function formatStreamJsonLine(line: string): string | null {
       }
     }
 
-    // Handle root-level tool_call messages
+    // Handle root-level tool_call messages (Cursor format)
+    // Structure: { type: "tool_call", subtype: "started"|"completed", tool_call: { lsToolCall: {...} } }
     if (json.type === 'tool_call') {
+      // Extract tool name from tool_call object key (e.g., "lsToolCall" -> "ls")
+      const toolCallObj = json.tool_call;
+      const toolKey = Object.keys(toolCallObj || {}).find((k: string) => k.endsWith('ToolCall'));
+      const toolName = toolKey ? toolKey.replace('ToolCall', '') : 'tool';
+
       if (json.subtype === 'started') {
-        // Don't show on start - will show with final color when tool_result arrives
-        return null;
+        // Show tool starting
+        return formatCommand(toolName, 'started');
       } else if (json.subtype === 'completed') {
-        // Skip completed events - the result will be shown via tool_result
-        return null;
+        // Show tool completed with result (like OpenCode's tool_use)
+        const toolData = toolCallObj?.[toolKey!];
+        const result = toolData?.result;
+
+        if (result?.error) {
+          const errorMsg = typeof result.error === 'string'
+            ? result.error
+            : (result.error?.message || JSON.stringify(result.error));
+          return formatCommand(toolName, 'error') + '\n' + formatResult(errorMsg, true);
+        } else if (result?.success !== undefined) {
+          // Get a preview of the success result
+          let preview: string;
+          const success = result.success;
+          if (typeof success === 'string') {
+            const trimmed = success.trim();
+            preview = trimmed.length > 150 ? trimmed.substring(0, 150) + '...' : trimmed;
+          } else if (success === null || success === undefined) {
+            preview = 'done';
+          } else {
+            // For objects, try to extract meaningful preview
+            const successStr = JSON.stringify(success);
+            preview = successStr.length > 150 ? successStr.substring(0, 150) + '...' : successStr;
+          }
+          return formatCommand(toolName, 'success') + '\n' + formatResult(preview || 'done', false);
+        }
+        // Fallback for unknown result format
+        return formatCommand(toolName, 'success');
       }
     }
 
@@ -137,7 +184,7 @@ function formatStreamJsonLine(line: string): string | null {
 }
 
 export async function runCursor(options: RunCursorOptions): Promise<RunCursorResult> {
-  const { prompt, workingDir, model, env, onData, onErrorData, abortSignal, timeout = 1800000 } = options;
+  const { prompt, workingDir, resumeSessionId, resumePrompt, model, env, onData, onErrorData, onSessionId, abortSignal, timeout = 1800000 } = options;
 
   // Reset global state to prevent data leakage between calls
   toolNameMap.clear();
@@ -152,8 +199,8 @@ export async function runCursor(options: RunCursorOptions): Promise<RunCursorRes
   }
 
   // Set up CURSOR_CONFIG_DIR for authentication
-  const cursorConfigDir = process.env.CURSOR_CONFIG_DIR
-    ? expandHomeDir(process.env.CURSOR_CONFIG_DIR)
+  const cursorConfigDir = process.env[ENV.CURSOR_HOME]
+    ? expandHomeDir(process.env[ENV.CURSOR_HOME]!)
     : path.join(homedir(), '.codemachine', 'cursor');
 
   const mergedEnv = {
@@ -162,7 +209,6 @@ export async function runCursor(options: RunCursorOptions): Promise<RunCursorRes
     CURSOR_CONFIG_DIR: cursorConfigDir,
   };
 
-  const plainLogs = (process.env.CODEMACHINE_PLAIN_LOGS || '').toString() === '1';
   // Force pipe mode to ensure text normalization is applied
   const inheritTTY = false;
 
@@ -175,11 +221,6 @@ export async function runCursor(options: RunCursorOptions): Promise<RunCursorRes
     // So we keep only the text after the last \r in each line
     result = result.replace(/^.*\r([^\r\n]*)/gm, '$1');
 
-    if (plainLogs) {
-      // Plain mode: strip all ANSI sequences
-      result = result.replace(ANSI_ESCAPE_SEQUENCE, '');
-    }
-
     // Clean up line endings
     result = result
       .replace(/\r\n/g, '\n')  // Convert CRLF to LF
@@ -191,7 +232,7 @@ export async function runCursor(options: RunCursorOptions): Promise<RunCursorRes
 
   const { command, args } = buildCursorExecCommand({
     workingDir,
-    prompt,
+    resumeSessionId,
     model,
     cursorConfigDir
   });
@@ -200,6 +241,8 @@ export async function runCursor(options: RunCursorOptions): Promise<RunCursorRes
   debug(`Cursor runner - prompt length: ${prompt.length}, lines: ${prompt.split('\n').length}`);
   debug(`Cursor runner - args count: ${args.length}, model: ${model ?? 'auto'}`);
 
+  let sessionIdCaptured = false;
+
   let result;
   try {
     result = await spawnProcess({
@@ -207,7 +250,7 @@ export async function runCursor(options: RunCursorOptions): Promise<RunCursorRes
       args,
       cwd: workingDir,
       env: mergedEnv,
-      stdinInput: prompt, // Pass prompt via stdin instead of command-line argument
+      stdinInput: resumeSessionId ? buildResumePrompt(resumePrompt) : prompt,
     onStdout: inheritTTY
       ? undefined
       : (chunk) => {
@@ -217,6 +260,17 @@ export async function runCursor(options: RunCursorOptions): Promise<RunCursorRes
           const lines = out.trim().split('\n');
           for (const line of lines) {
             if (!line.trim()) continue;
+
+            // Capture session ID from first event that contains it
+            try {
+              const json = JSON.parse(line);
+              if (!sessionIdCaptured && json.session_id && onSessionId) {
+                sessionIdCaptured = true;
+                onSessionId(json.session_id);
+              }
+            } catch {
+              // Ignore parse errors
+            }
 
             const formatted = formatStreamJsonLine(line);
             if (formatted) {

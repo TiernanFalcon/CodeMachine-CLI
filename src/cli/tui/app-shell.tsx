@@ -18,24 +18,91 @@ import { Home } from "@tui/routes/home"
 import { Workflow } from "@tui/routes/workflow"
 import { Onboard } from "@tui/routes/onboard"
 import { homedir } from "os"
-import { WorkflowEventBus } from "../../workflows/events/index.js"
-import { getControlBus } from "../../workflows/control/index.js"
+import { WorkflowEventBus, OnboardingService } from "../../workflows/events/index.js"
+import { debug, setDebugLogFile, appDebug } from "../../shared/logging/logger.js"
 import { MonitoringCleanup } from "../../agents/monitoring/index.js"
 import path from "path"
 import { createRequire } from "node:module"
 import { resolvePackageJson } from "../../shared/runtime/root.js"
-import { getSelectedTrack, setSelectedTrack, hasSelectedConditions, setSelectedConditions, getProjectName, setProjectName, getControllerAgents, initControllerAgent, loadControllerConfig } from "../../shared/workflows/index.js"
-import { loadTemplate } from "../../workflows/templates/loader.js"
-import { getTemplatePathFromTracking } from "../../shared/workflows/template.js"
-import { copyToSystemClipboard, generateOSC52Sequence } from "./utils/clipboard.js"
-import type { TrackConfig, ConditionConfig } from "../../workflows/templates/types"
-import type { AgentDefinition } from "../../shared/agents/config/types"
+import { setSelectedTrack, setSelectedConditions, setProjectName } from "../../shared/workflows/index.js"
+import { checkOnboardingRequired, needsOnboarding } from "../../workflows/preflight.js"
+import type { TracksConfig, ConditionGroup } from "../../workflows/templates/types"
 import type { InitialToast } from "./app"
 
 // Module-level view state for post-processing effects
 export let currentView: "home" | "onboard" | "workflow" = "home"
 
+/**
+ * Get the clipboard copy method based on OS (lazy loaded)
+ */
+function getClipboardCopyMethod(): ((text: string) => Promise<void>) | null {
+  const os = process.platform
+
+  if (os === "darwin" && Bun.which("osascript")) {
+    return async (text: string) => {
+      const escaped = text.replace(/\\/g, "\\\\").replace(/"/g, '\\"')
+      await Bun.$`osascript -e 'set the clipboard to "${escaped}"'`.nothrow().quiet()
+    }
+  }
+
+  if (os === "linux") {
+    if (process.env.WAYLAND_DISPLAY && Bun.which("wl-copy")) {
+      return async (text: string) => {
+        const proc = Bun.spawn(["wl-copy"], { stdin: "pipe", stdout: "ignore", stderr: "ignore" })
+        proc.stdin.write(text)
+        proc.stdin.end()
+        await proc.exited.catch(() => {})
+      }
+    }
+    if (Bun.which("xclip")) {
+      return async (text: string) => {
+        const proc = Bun.spawn(["xclip", "-selection", "clipboard"], { stdin: "pipe", stdout: "ignore", stderr: "ignore" })
+        proc.stdin.write(text)
+        proc.stdin.end()
+        await proc.exited.catch(() => {})
+      }
+    }
+    if (Bun.which("xsel")) {
+      return async (text: string) => {
+        const proc = Bun.spawn(["xsel", "--clipboard", "--input"], { stdin: "pipe", stdout: "ignore", stderr: "ignore" })
+        proc.stdin.write(text)
+        proc.stdin.end()
+        await proc.exited.catch(() => {})
+      }
+    }
+    if (Bun.which("clip.exe")) {
+      return async (text: string) => {
+        const proc = Bun.spawn(["clip.exe"], { stdin: "pipe", stdout: "ignore", stderr: "ignore" })
+        proc.stdin.write(text)
+        proc.stdin.end()
+        await proc.exited.catch(() => {})
+      }
+    }
+  }
+
+  if (os === "win32" && Bun.which("powershell")) {
+    return async (text: string) => {
+      const escaped = text.replace(/"/g, '""')
+      await Bun.$`powershell -command "Set-Clipboard -Value \"${escaped}\""`.nothrow().quiet()
+    }
+  }
+
+  return null
+}
+
+let clipboardMethod: ((text: string) => Promise<void>) | null | undefined
+
+async function copyToSystemClipboard(text: string): Promise<void> {
+  if (clipboardMethod === undefined) {
+    clipboardMethod = getClipboardCopyMethod()
+  }
+  if (clipboardMethod) {
+    await clipboardMethod(text)
+  }
+}
+
 export function App(props: { initialToast?: InitialToast }) {
+  appDebug('[AppShell] App component initializing')
   const dimensions = useTerminalDimensions()
   const themeCtx = useTheme()
   const session = useSession()
@@ -43,9 +110,11 @@ export function App(props: { initialToast?: InitialToast }) {
   const renderer = useRenderer()
   const toast = useToast()
   const kv = useKV()
+  appDebug('[AppShell] Hooks initialized')
 
   // Global error handler - any part of the app can emit 'app:error' to show a toast
   const handleAppError = (data: { message: string; duration?: number }) => {
+    appDebug('[AppShell] App error received: %s', data.message)
     toast.show({
       variant: "error",
       message: data.message,
@@ -54,14 +123,22 @@ export function App(props: { initialToast?: InitialToast }) {
   }
   ;(process as NodeJS.EventEmitter).on('app:error', handleAppError)
 
+  // Return to home handler - triggered when user confirms exit from workflow
+  const handleReturnHome = () => {
+    currentView = "home"
+    setView("home")
+  }
+  ;(process as NodeJS.EventEmitter).on('workflow:return-home', handleReturnHome)
+
   const [ctrlCPressed, setCtrlCPressed] = createSignal(false)
   let ctrlCTimeout: NodeJS.Timeout | null = null
   const [view, setView] = createSignal<"home" | "onboard" | "workflow">("home")
   const [workflowEventBus, setWorkflowEventBus] = createSignal<WorkflowEventBus | null>(null)
-  const [templateTracks, setTemplateTracks] = createSignal<Record<string, TrackConfig> | null>(null)
-  const [templateConditions, setTemplateConditions] = createSignal<Record<string, ConditionConfig> | null>(null)
+  const [templateTracks, setTemplateTracks] = createSignal<TracksConfig | null>(null)
+  const [templateConditionGroups, setTemplateConditionGroups] = createSignal<ConditionGroup[] | null>(null)
   const [initialProjectName, setInitialProjectName] = createSignal<string | null>(null)
-  const [controllerAgents, setControllerAgents] = createSignal<AgentDefinition[] | null>(null)
+  const [onboardingService, setOnboardingService] = createSignal<OnboardingService | null>(null)
+  const [onboardingEventBus, setOnboardingEventBus] = createSignal<WorkflowEventBus | null>(null)
 
   let pendingWorkflowStart: (() => void) | null = null
 
@@ -73,53 +150,78 @@ export function App(props: { initialToast?: InitialToast }) {
   }
 
   const handleStartWorkflow = async () => {
+    appDebug('[AppShell] handleStartWorkflow called')
     const cwd = process.env.CODEMACHINE_CWD || process.cwd()
     const cmRoot = path.join(cwd, '.codemachine')
+    appDebug('[AppShell] cwd=%s, cmRoot=%s', cwd, cmRoot)
 
-    // Check if tracks/conditions exist and no selection yet
+    // Initialize debug log file early (before onboarding) so all logs are captured
+    const rawLogLevel = (process.env.LOG_LEVEL || '').trim().toLowerCase()
+    const debugFlag = (process.env.DEBUG || '').trim().toLowerCase()
+    const debugEnabled = rawLogLevel === 'debug' || (debugFlag !== '' && debugFlag !== '0' && debugFlag !== 'false')
+    if (debugEnabled) {
+      const debugLogPath = path.join(cwd, '.codemachine', 'logs', 'workflow-debug.log')
+      appDebug('[AppShell] Switching to workflow debug log: %s', debugLogPath)
+      setDebugLogFile(debugLogPath)
+    }
+
+    // Run pre-flight checks
     try {
-      const templatePath = await getTemplatePathFromTracking(cmRoot)
-      const template = await loadTemplate(cwd, templatePath)
-      const selectedTrack = await getSelectedTrack(cmRoot)
-      const conditionsSelected = await hasSelectedConditions(cmRoot)
-      const existingProjectName = await getProjectName(cmRoot)
+      const onboardingNeeds = await checkOnboardingRequired({ cwd })
+      const { template } = onboardingNeeds
 
-      const hasTracks = template.tracks && Object.keys(template.tracks).length > 0
-      const hasConditions = template.conditions && Object.keys(template.conditions).length > 0
-      const needsTrackSelection = hasTracks && !selectedTrack
-      const needsConditionsSelection = hasConditions && !conditionsSelected
-      const needsProjectName = !existingProjectName
+      // If any onboarding is needed, show onboard view
+      if (needsOnboarding(onboardingNeeds)) {
+        debug('[AppShell] Starting onboarding flow')
 
-      // Check if workflow requires controller selection
-      // Skip if controller session already exists
-      let controllers: AgentDefinition[] = []
-      const existingControllerConfig = await loadControllerConfig(cmRoot)
-      const hasExistingControllerSession = existingControllerConfig?.controllerConfig?.sessionId
-      if (template.controller === true && !hasExistingControllerSession) {
-        controllers = await getControllerAgents(cwd)
-      }
-      const needsControllerSelection = controllers.length > 0
+        const hasTracks = template.tracks && Object.keys(template.tracks.options).length > 0
+        const hasConditionGroups = template.conditionGroups && template.conditionGroups.length > 0
 
-      // If project name, tracks, conditions, or controller need selection, show onboard view
-      if (needsProjectName || needsTrackSelection || needsConditionsSelection || needsControllerSelection) {
+        // Store config for Onboard component
         if (hasTracks) setTemplateTracks(template.tracks!)
-        if (hasConditions) setTemplateConditions(template.conditions!)
-        if (needsControllerSelection) setControllerAgents(controllers)
-        setInitialProjectName(existingProjectName) // Pass existing name if any (to skip that step)
+        if (hasConditionGroups) setTemplateConditionGroups(template.conditionGroups!)
+        setInitialProjectName(null)
+
+        // Create event bus and service for onboarding
+        const eventBus = new WorkflowEventBus()
+        setOnboardingEventBus(eventBus)
+
+        const service = new OnboardingService(eventBus, {
+          tracks: hasTracks ? template.tracks : undefined,
+          conditionGroups: hasConditionGroups ? template.conditionGroups : undefined,
+          initialProjectName: onboardingNeeds.needsProjectName ? undefined : undefined,
+        })
+        setOnboardingService(service)
+
+        // Subscribe to completion event
+        eventBus.on('onboard:completed', (event) => {
+          debug('[AppShell] onboard:completed received result=%o', event.result)
+          handleOnboardComplete(event.result)
+        })
+
+        // Subscribe to cancel event
+        eventBus.on('onboard:cancelled', () => {
+          debug('[AppShell] onboard:cancelled received')
+          handleOnboardCancel()
+        })
+
         currentView = "onboard"
         setView("onboard")
         return
       }
     } catch (error) {
-      // If template loading fails, proceed to workflow anyway
-      console.error("Failed to check tracks/conditions:", error)
+      // If pre-flight check fails, proceed to workflow anyway
+      appDebug('[AppShell] Failed pre-flight check: %s', error)
+      console.error("Failed pre-flight check:", error)
     }
 
-    // No tracks/conditions or already selected - start workflow directly
+    // No onboarding needed - start workflow directly
+    appDebug('[AppShell] Starting workflow execution directly')
     startWorkflowExecution()
   }
 
   const startWorkflowExecution = () => {
+    appDebug('[AppShell] startWorkflowExecution called')
     const eventBus = new WorkflowEventBus()
     setWorkflowEventBus(eventBus)
     // @ts-expect-error - global export for workflow connection
@@ -127,12 +229,15 @@ export function App(props: { initialToast?: InitialToast }) {
 
     const cwd = process.env.CODEMACHINE_CWD || process.cwd()
     const specPath = path.join(cwd, '.codemachine', 'inputs', 'specifications.md')
+    appDebug('[AppShell] specPath=%s', specPath)
 
     pendingWorkflowStart = () => {
-      import("../../workflows/execution/run.js").then(({ runWorkflow }) => {
-        runWorkflow({ cwd, specificationPath: specPath }).catch((error) => {
+      appDebug('[AppShell] Importing and running workflow')
+      import("../../workflows/run.js").then(({ runWorkflow }) => {
+        runWorkflow({ cwd }).catch((error) => {
           // Emit error event to show toast with actual error message
           const errorMsg = error instanceof Error ? error.message : String(error)
+          appDebug('[AppShell] Workflow error: %s', errorMsg)
           ;(process as NodeJS.EventEmitter).emit('app:error', { message: errorMsg })
         })
       })
@@ -140,9 +245,10 @@ export function App(props: { initialToast?: InitialToast }) {
 
     currentView = "workflow"
     setView("workflow")
+    appDebug('[AppShell] View set to workflow')
   }
 
-  const handleOnboardComplete = async (result: { projectName?: string; trackId?: string; conditions?: string[]; controllerAgentId?: string }) => {
+  const handleOnboardComplete = async (result: { projectName?: string; trackId?: string; conditions?: string[] }) => {
     const cwd = process.env.CODEMACHINE_CWD || process.cwd()
     const cmRoot = path.join(cwd, '.codemachine')
 
@@ -161,21 +267,6 @@ export function App(props: { initialToast?: InitialToast }) {
       await setSelectedConditions(cmRoot, result.conditions)
     }
 
-    // Initialize controller agent if selected
-    if (result.controllerAgentId) {
-      const agent = controllerAgents()?.find(a => a.id === result.controllerAgentId)
-      if (agent) {
-        // Get prompt path from agent config (or use default)
-        const promptPath = (agent.promptPath as string) || `prompts/agents/${result.controllerAgentId}/system.md`
-        try {
-          await initControllerAgent(result.controllerAgentId, promptPath, cwd, cmRoot)
-        } catch (error) {
-          console.error("Failed to initialize controller agent:", error)
-          // Continue anyway - workflow will run without autonomous mode
-        }
-      }
-    }
-
     // Start workflow
     startWorkflowExecution()
   }
@@ -189,7 +280,7 @@ export function App(props: { initialToast?: InitialToast }) {
     if (view() === "workflow") {
       MonitoringCleanup.registerWorkflowHandlers({
         onStop: () => {
-          getControlBus().emit('stopping')
+          ;(process as NodeJS.EventEmitter).emit('workflow:stopping')
         },
         onExit: () => {
           renderer.destroy()
@@ -216,9 +307,12 @@ export function App(props: { initialToast?: InitialToast }) {
       if (selection && selection.isActive) {
         const selectedText = selection.getSelectedText()
         if (selectedText && selectedText.length > 0) {
-          // OSC52 via renderer.writeOut (cross-terminal clipboard)
+          // OSC52 via renderer.writeOut
+          const base64 = Buffer.from(selectedText).toString("base64")
+          const osc52 = `\x1b]52;c;${base64}\x07`
+          const finalOsc52 = process.env.TMUX ? `\x1bPtmux;\x1b${osc52}\x1b\\` : osc52
           // @ts-expect-error writeOut exists on renderer
-          renderer.writeOut(generateOSC52Sequence(selectedText))
+          renderer.writeOut(finalOsc52)
           // Also try system clipboard
           copyToSystemClipboard(selectedText)
             .then(() => toast.show({ variant: "info", message: "Copied to clipboard", duration: 1500 }))
@@ -273,11 +367,12 @@ export function App(props: { initialToast?: InitialToast }) {
           <Match when={view() === "onboard"}>
             <Onboard
               tracks={templateTracks() ?? undefined}
-              conditions={templateConditions() ?? undefined}
-              controllerAgents={controllerAgents() ?? undefined}
+              conditionGroups={templateConditionGroups() ?? undefined}
               initialProjectName={initialProjectName()}
               onComplete={handleOnboardComplete}
               onCancel={handleOnboardCancel}
+              eventBus={onboardingEventBus() ?? undefined}
+              service={onboardingService() ?? undefined}
             />
           </Match>
           <Match when={view() === "workflow"}>

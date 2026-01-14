@@ -1,15 +1,20 @@
-import { stat, rm, mkdir, writeFile } from 'node:fs/promises';
+import { stat } from 'node:fs/promises';
 import * as path from 'node:path';
 import { homedir } from 'node:os';
 
 import { expandHomeDir } from '../../../../shared/utils/index.js';
-import { metadata } from './metadata.js';
 import {
-  isCliInstalled,
-  isCliNotFoundError,
+  checkCliInstalled,
   displayCliNotInstalledError,
-  displayCliNotFoundError,
-} from '../../core/cli-utils.js';
+  isCommandNotFoundError,
+  ensureAuthDirectory,
+  createCredentialFile,
+  cleanupAuthFiles,
+  getNextAuthAction,
+  checkCredentialExists,
+} from '../../core/auth.js';
+import { metadata } from './metadata.js';
+import { ENV } from './config.js';
 
 export interface CursorAuthOptions {
   cursorConfigDir?: string;
@@ -23,8 +28,8 @@ export function resolveCursorConfigDir(options?: CursorAuthOptions): string {
     return expandHomeDir(options.cursorConfigDir);
   }
 
-  if (process.env.CURSOR_CONFIG_DIR) {
-    return expandHomeDir(process.env.CURSOR_CONFIG_DIR);
+  if (process.env[ENV.CURSOR_HOME]) {
+    return expandHomeDir(process.env[ENV.CURSOR_HOME]!);
   }
 
   // Authentication is shared globally
@@ -56,14 +61,7 @@ export function getCursorAuthPaths(configDir: string): string[] {
 export async function isAuthenticated(options?: CursorAuthOptions): Promise<boolean> {
   const configDir = resolveCursorConfigDir(options);
   const configPath = getCursorConfigPath(configDir);
-
-  try {
-    const stats = await stat(configPath);
-    // Check if cli-config.json exists and is a file
-    return stats.isFile();
-  } catch (_error) {
-    return false;
-  }
+  return checkCredentialExists(configPath);
 }
 
 /**
@@ -83,15 +81,8 @@ export async function ensureAuth(options?: CursorAuthOptions): Promise<boolean> 
     // Config file doesn't exist
   }
 
-  if (process.env.CODEMACHINE_SKIP_AUTH === '1') {
-    // Create a placeholder for testing/dry-run mode
-    await mkdir(configDir, { recursive: true });
-    await writeFile(configPath, JSON.stringify({ version: 1 }), 'utf8');
-    return true;
-  }
-
   // Check if CLI is installed
-  const cliInstalled = await isCliInstalled(metadata.cliBinary);
+  const cliInstalled = await checkCliInstalled(metadata.cliBinary);
   if (!cliInstalled) {
     displayCliNotInstalledError(metadata);
     throw new Error(`${metadata.name} CLI is not installed.`);
@@ -102,7 +93,7 @@ export async function ensureAuth(options?: CursorAuthOptions): Promise<boolean> 
   console.log(`Config directory: ${configDir}\n`);
 
   // Ensure the config directory exists before login
-  await mkdir(configDir, { recursive: true });
+  await ensureAuthDirectory(configDir);
 
   // Set CURSOR_CONFIG_DIR to control where cursor-agent stores authentication
   try {
@@ -118,10 +109,18 @@ export async function ensureAuth(options?: CursorAuthOptions): Promise<boolean> 
     });
     await proc.exited;
   } catch (error) {
-    if (isCliNotFoundError(error)) {
-      displayCliNotFoundError(metadata, 'login');
+    if (isCommandNotFoundError(error)) {
+      console.error(`\n────────────────────────────────────────────────────────────`);
+      console.error(`  ⚠️  ${metadata.name} CLI Not Found`);
+      console.error(`────────────────────────────────────────────────────────────`);
+      console.error(`\n'${metadata.cliBinary} login' failed because the CLI is missing.`);
+      console.error(`Please install ${metadata.name} CLI before trying again:\n`);
+      console.error(`  ${metadata.installCommand}\n`);
+      console.error(`────────────────────────────────────────────────────────────\n`);
       throw new Error(`${metadata.name} CLI is not installed.`);
     }
+
+    // Re-throw other errors to preserve original failure context
     throw error;
   }
 
@@ -154,22 +153,12 @@ export async function ensureAuth(options?: CursorAuthOptions): Promise<boolean> 
 export async function clearAuth(options?: CursorAuthOptions): Promise<void> {
   const configDir = resolveCursorConfigDir(options);
   const authPaths = getCursorAuthPaths(configDir);
-
-  // Remove all auth-related files/folders
-  await Promise.all(
-    authPaths.map(async (authPath) => {
-      try {
-        await rm(authPath, { force: true, recursive: true });
-      } catch (_error) {
-        // Ignore removal errors; treat as cleared
-      }
-    }),
-  );
+  await cleanupAuthFiles(authPaths);
 }
 
 /**
  * Returns the next auth menu action based on current auth state
  */
 export async function nextAuthMenuAction(options?: CursorAuthOptions): Promise<'login' | 'logout'> {
-  return (await isAuthenticated(options)) ? 'logout' : 'login';
+  return getNextAuthAction(await isAuthenticated(options));
 }

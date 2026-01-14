@@ -2,7 +2,9 @@
  * Workflow State Machine Types
  *
  * Defines the states, events, and context for workflow execution.
- * This is the single source of truth for workflow state.
+ *
+ * Note: Queue state (promptQueue, promptQueueIndex) is managed by StepIndexManager.
+ * See src/workflows/indexing/ for the single source of truth.
  */
 
 import type { ModuleStep } from '../templates/types.js';
@@ -11,13 +13,13 @@ import type { ModuleStep } from '../templates/types.js';
  * Workflow states - mutually exclusive
  */
 export type WorkflowState =
-  | 'idle'                    // Not started
-  | 'running'                 // Agent executing (input disabled)
-  | 'waiting'                 // Waiting for input (input enabled)
-  | 'waiting_for_rate_limit'  // All engines rate-limited, waiting for reset
-  | 'completed'               // All steps done
-  | 'stopped'                 // User stopped
-  | 'error';                  // Fatal error
+  | 'idle'              // Not started
+  | 'running'           // Agent executing (input disabled)
+  | 'awaiting'          // Awaiting user input (input enabled)
+  | 'delegated'         // Controller agent is running (autonomous mode)
+  | 'completed'         // All steps done
+  | 'stopped'           // User stopped
+  | 'error';            // Fatal error
 
 /**
  * Events that trigger state transitions
@@ -27,11 +29,12 @@ export type WorkflowEvent =
   | { type: 'STEP_COMPLETE'; output: StepOutput }
   | { type: 'STEP_ERROR'; error: Error }
   | { type: 'INPUT_RECEIVED'; input: string }
+  | { type: 'RESUME' }
   | { type: 'SKIP' }
   | { type: 'PAUSE' }
   | { type: 'STOP' }
-  | { type: 'RATE_LIMIT_WAIT'; resetsAt: Date; engineId: string }
-  | { type: 'RATE_LIMIT_CLEAR' };
+  | { type: 'DELEGATE' }   // Switch from awaiting to delegated (mode change to auto)
+  | { type: 'AWAIT' };     // Switch from delegated to awaiting (mode change to manual)
 
 /**
  * Output from a completed step
@@ -57,8 +60,9 @@ export interface WorkflowContext {
 
   // Input mode
   autoMode: boolean;
-  promptQueue: QueuedPrompt[];
-  promptQueueIndex: number;
+
+  // Pause state
+  paused: boolean;
 
   // Paths
   cwd: string;
@@ -67,9 +71,9 @@ export interface WorkflowContext {
   // Error tracking
   lastError?: Error;
 
-  // Rate limit tracking
-  rateLimitResetsAt?: Date;
-  rateLimitEngineId?: string;
+  // Auto mode continuation tracking
+  // When true, continuation prompt has been sent for current step in delegated state
+  continuationPromptSent?: boolean;
 }
 
 /**

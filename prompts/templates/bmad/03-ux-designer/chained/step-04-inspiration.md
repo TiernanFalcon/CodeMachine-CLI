@@ -30,6 +30,10 @@ Analyze inspiring products and UX patterns to inform design decisions for the cu
 
 ## INSPIRATION ANALYSIS SEQUENCE:
 
+### 0. Save Previous Step Content
+
+**First Action:** Append the confirmed content from Step 3 to the UX Design Specification document.
+
 ### 1. Identify User's Favorite Apps
 
 Start by gathering inspiration sources:
@@ -141,18 +145,7 @@ Prepare the content to append to the document:
 [Strategy for using inspiration based on conversation]
 ```
 
-### 7. Step Completion
-
-**Save Content:**
-Append the content from step 6 to the UX Design Specification document now.
-
-**Confirmation:**
-"Content saved to document.
-
-I've analyzed inspiring UX patterns and products to inform our design strategy for {{project_name}}. This gives us a solid foundation of proven patterns to build upon.
-
-- If you want to **modify or add details**, just tell me what you'd like to change
-- If you're satisfied, **press Enter in the promptbox to go to the next step**"
+{step_completion}
 
 ## SUCCESS METRICS:
 

@@ -1,15 +1,17 @@
-import { stat, rm, writeFile, mkdir } from 'node:fs/promises';
+import { stat, rm, writeFile } from 'node:fs/promises';
 import * as path from 'node:path';
 import { homedir } from 'node:os';
 
 import { expandHomeDir } from '../../../../shared/utils/index.js';
-import { metadata } from './metadata.js';
 import {
-  isCliInstalled,
-  isCliNotFoundError,
+  checkCliInstalled,
   displayCliNotInstalledError,
-  displayCliNotFoundError,
-} from '../../core/cli-utils.js';
+  isCommandNotFoundError,
+  ensureAuthDirectory,
+  createCredentialFile,
+} from '../../core/auth.js';
+import { metadata } from './metadata.js';
+import { ENV } from './config.js';
 
 const SENTINEL_FILE = 'auth.json';
 
@@ -17,29 +19,13 @@ const SENTINEL_FILE = 'auth.json';
  * Resolves the Auggie home directory
  */
 function resolveAuggieHome(customPath?: string): string {
-  const configured = customPath ?? process.env.AUGGIE_HOME;
+  const configured = customPath ?? process.env[ENV.AUGGIE_HOME];
   const target = configured ? expandHomeDir(configured) : path.join(homedir(), '.codemachine', 'auggie');
   return target;
 }
 
-async function ensureDataDirExists(dataDir: string): Promise<void> {
-  await mkdir(dataDir, { recursive: true });
-}
-
 function getSentinelPath(auggieHome: string): string {
   return path.join(auggieHome, 'data', SENTINEL_FILE);
-}
-
-
-export async function isAuthenticated(): Promise<boolean> {
-  // Check if CLI is installed
-  const cliInstalled = await isCliInstalled(metadata.cliBinary);
-  if (!cliInstalled) {
-    return false;
-  }
-
-  // Check if Auggie has valid session
-  return await hasAuggieCredential();
 }
 
 /**
@@ -63,6 +49,17 @@ async function hasAuggieCredential(): Promise<boolean> {
   }
 }
 
+export async function isAuthenticated(): Promise<boolean> {
+  // Check credential file first (fast file stat)
+  const hasCredential = await hasAuggieCredential();
+  if (!hasCredential) {
+    return false;
+  }
+
+  // Credential exists, verify CLI is installed
+  return await checkCliInstalled(metadata.cliBinary);
+}
+
 export async function ensureAuth(forceLogin = false): Promise<boolean> {
   const auggieHome = resolveAuggieHome();
   const dataDir = path.join(auggieHome, 'data');
@@ -79,18 +76,13 @@ export async function ensureAuth(forceLogin = false): Promise<boolean> {
   }
 
   // Ensure data directory exists before proceeding
-  await ensureDataDirExists(dataDir);
+  await ensureAuthDirectory(dataDir);
 
   // Check if CLI is installed
-  const cliInstalled = await isCliInstalled(metadata.cliBinary);
+  const cliInstalled = await checkCliInstalled(metadata.cliBinary);
   if (!cliInstalled) {
     displayCliNotInstalledError(metadata);
     throw new Error(`${metadata.name} is not installed.`);
-  }
-
-  if (process.env.CODEMACHINE_SKIP_AUTH === '1') {
-    await writeFile(sentinelPath, '{}', { encoding: 'utf8' });
-    return true;
   }
 
   // Run interactive login via Auggie CLI
@@ -112,10 +104,17 @@ export async function ensureAuth(forceLogin = false): Promise<boolean> {
     });
     await proc.exited;
   } catch (error) {
-    if (isCliNotFoundError(error)) {
-      displayCliNotFoundError(metadata, 'login');
+    if (isCommandNotFoundError(error)) {
+      console.error(`\n────────────────────────────────────────────────────────────`);
+      console.error(`  ⚠️  ${metadata.name} Not Found`);
+      console.error(`────────────────────────────────────────────────────────────`);
+      console.error(`\n'${metadata.cliBinary} login' failed because the CLI is missing.`);
+      console.error(`Please install ${metadata.name} before trying again:\n`);
+      console.error(`  ${metadata.installCommand}\n`);
+      console.error(`────────────────────────────────────────────────────────────\n`);
       throw new Error(`${metadata.name} is not installed.`);
     }
+
     throw error;
   }
 
@@ -181,4 +180,3 @@ export async function nextAuthMenuAction(): Promise<'login' | 'logout'> {
 }
 
 export { resolveAuggieHome };
-

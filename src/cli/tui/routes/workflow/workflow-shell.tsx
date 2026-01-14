@@ -13,19 +13,16 @@ import { useToast } from "@tui/shared/context/toast"
 import { useUIState } from "./context/ui-state"
 import { AgentTimeline } from "./components/timeline"
 import { OutputWindow, TelemetryBar, StatusFooter } from "./components/output"
-import { formatRuntime } from "./state/formatters"
-import { CheckpointModal, LogViewer, HistoryView, StopModal, ErrorModal, SettingsModal } from "./components/modals"
+import { useTimer } from "@tui/shared/services"
+import { CheckpointModal, LogViewer, HistoryView, StopModal, ErrorModal, ControllerContinueModal } from "./components/modals"
 import { OpenTUIAdapter } from "./adapters/opentui"
 import { useLogStream } from "./hooks/useLogStream"
 import { useSubAgentSync } from "./hooks/useSubAgentSync"
-import { useTick } from "@tui/shared/hooks/tick"
 import { useWorkflowModals } from "./hooks/use-workflow-modals"
 import { useWorkflowKeyboard } from "./hooks/use-workflow-keyboard"
 import { calculateVisibleItems } from "./constants"
 import type { WorkflowEventBus } from "../../../../workflows/events/index.js"
 import { setAutonomousMode as persistAutonomousMode, loadControllerConfig } from "../../../../shared/workflows/index.js"
-import { setEngineSelectionContext, loadEngineConfig, saveEngineConfig } from "../../../../workflows/execution/engine-presets.js"
-import { getControlBus } from "../../../../workflows/control/index.js"
 import { debug } from "../../../../shared/logging/logger.js"
 import path from "path"
 
@@ -47,6 +44,7 @@ export function WorkflowShell(props: WorkflowShellProps) {
   const state = () => ui.state()
   const dimensions = useTerminalDimensions()
   const modals = useWorkflowModals()
+  const timer = useTimer()
 
   const getVisibleItems = () => calculateVisibleItems(dimensions()?.height ?? 30)
 
@@ -64,11 +62,8 @@ export function WorkflowShell(props: WorkflowShellProps) {
         case "stopped":
           toast.show({ variant: "error", message: "Stopped by user", duration: 3000 })
           break
-        case "checkpoint":
-          toast.show({ variant: "warning", message: "Checkpoint - Review Required", duration: 5000 })
-          break
-        case "rate_limit_waiting":
-          toast.show({ variant: "warning", message: "All engines rate-limited, waiting for reset...", duration: 5000 })
+        case "awaiting":
+          toast.show({ variant: "warning", message: "Awaiting - Input Required", duration: 5000 })
           break
       }
     }
@@ -87,19 +82,14 @@ export function WorkflowShell(props: WorkflowShellProps) {
     ui.actions.setVisibleItemCount(getVisibleItems())
   })
 
-  // Track checkpoint freeze time
-  const [checkpointFreezeTime, setCheckpointFreezeTime] = createSignal<number | undefined>(undefined)
-
   // Connect to event bus
   let adapter: OpenTUIAdapter | null = null
 
   const handleStopping = () => {
-    setCheckpointFreezeTime(Date.now())
     ui.actions.setWorkflowStatus("stopping")
   }
 
   const handleUserStop = () => {
-    setCheckpointFreezeTime(Date.now())
     ui.actions.setWorkflowStatus("stopped")
   }
 
@@ -107,10 +97,9 @@ export function WorkflowShell(props: WorkflowShellProps) {
   const [errorMessage, setErrorMessage] = createSignal<string | null>(null)
   const isErrorModalActive = () => errorMessage() !== null
 
-  const handleWorkflowError = (data: { error?: Error; reason?: string; agentId?: string }) => {
+  const handleWorkflowError = (data: { reason: string }) => {
     // Only set error message - workflow status is already set via event bus adapter
-    const message = data.reason || data.error?.message || 'Unknown error'
-    setErrorMessage(message)
+    setErrorMessage(data.reason)
   }
 
   const handleErrorModalClose = () => {
@@ -118,51 +107,45 @@ export function WorkflowShell(props: WorkflowShellProps) {
   }
 
   // Mode change listener - syncs UI state when autonomousMode changes
-  const handleModeChange = (data: { autonomousMode: boolean }) => {
+  const handleModeChange = (data: { autonomousMode: string }) => {
     debug('[MODE-CHANGE] Received event: autonomousMode=%s', data.autonomousMode)
-    ui.actions.setAutonomousMode(data.autonomousMode)
+    // Validate that the string is a valid AutonomousMode
+    if (['true', 'false', 'never', 'always'].includes(data.autonomousMode)) {
+      ui.actions.setAutonomousMode(data.autonomousMode as any)
+    }
   }
 
-  // Store unsubscribe functions for cleanup
-  let unsubscribers: (() => void)[] = []
-
   onMount(async () => {
-    // Use control bus instead of process events
-    const controlBus = getControlBus()
-    unsubscribers = [
-      controlBus.on('error', (data) => handleWorkflowError(data)),
-      controlBus.on('stopping', handleStopping),
-      controlBus.on('user-stop', handleUserStop),
-      controlBus.on('mode-change', handleModeChange),
-    ]
+    ; (process as NodeJS.EventEmitter).on('workflow:error', handleWorkflowError)
+      ; (process as NodeJS.EventEmitter).on('workflow:stopping', handleStopping)
+      ; (process as NodeJS.EventEmitter).on('workflow:user-stop', handleUserStop)
+      ; (process as NodeJS.EventEmitter).on('workflow:mode-change', handleModeChange)
 
-    // Load initial state from config files
+    // Load initial autonomous mode state
     const cmRoot = path.join(resolvePath(props.currentDir), '.codemachine')
-
-    // Load autonomous mode state
     debug('onMount - loading controller config from: %s', cmRoot)
     const controllerState = await loadControllerConfig(cmRoot)
     debug('onMount - controllerState: %s', JSON.stringify(controllerState))
-    if (controllerState?.autonomousMode) {
-      debug('onMount - setting autonomousMode to true')
-      ui.actions.setAutonomousMode(true)
-    } else {
-      debug('onMount - autonomousMode not enabled in config')
-    }
 
-    // Load engine preset and fallback state
-    const engineConfig = await loadEngineConfig(cmRoot)
-    if (engineConfig?.preset) {
-      debug('onMount - setting engine preset to: %s', engineConfig.preset)
-      ui.actions.setEnginePreset(engineConfig.preset)
-    }
-    if (engineConfig?.fallbackEnabled !== undefined) {
-      debug('onMount - setting fallbackEnabled to: %s', engineConfig.fallbackEnabled)
-      ui.actions.setFallbackEnabled(engineConfig.fallbackEnabled)
+    // Set autonomous mode from file if present, otherwise default is 'true'
+    if (controllerState?.autonomousMode) {
+      debug('onMount - setting autonomousMode to %s', controllerState.autonomousMode)
+      if (['true', 'false', 'never', 'always'].includes(controllerState.autonomousMode)) {
+        ui.actions.setAutonomousMode(controllerState.autonomousMode as any)
+      }
+    } else {
+      debug('onMount - autonomousMode not enabled in config, using default (true)')
     }
 
     if (props.eventBus) {
-      adapter = new OpenTUIAdapter({ actions: ui.actions })
+      // Extend actions with showToast from toast context
+      const actionsWithToast = {
+        ...ui.actions,
+        showToast: (variant: "success" | "error" | "info" | "warning", message: string) => {
+          toast.show({ variant, message, duration: 7000 })
+        }
+      }
+      adapter = new OpenTUIAdapter({ actions: actionsWithToast })
       adapter.connect(props.eventBus)
       adapter.start()
       props.onAdapterReady?.()
@@ -170,12 +153,10 @@ export function WorkflowShell(props: WorkflowShellProps) {
   })
 
   onCleanup(() => {
-    // Clean up control bus subscriptions
-    for (const unsubscribe of unsubscribers) {
-      unsubscribe()
-    }
-    unsubscribers = []
-
+    ; (process as NodeJS.EventEmitter).off('workflow:error', handleWorkflowError)
+      ; (process as NodeJS.EventEmitter).off('workflow:stopping', handleStopping)
+      ; (process as NodeJS.EventEmitter).off('workflow:user-stop', handleUserStop)
+      ; (process as NodeJS.EventEmitter).off('workflow:mode-change', handleModeChange)
     if (adapter) {
       adapter.stop()
       adapter.disconnect()
@@ -187,30 +168,16 @@ export function WorkflowShell(props: WorkflowShellProps) {
   // Unified input waiting check
   const isWaitingForInput = () => state().inputState?.active ?? false
 
-  // Timer freeze effect - unified handler for checkpoint and input waiting states
-  createEffect(() => {
-    const checkpointState = state().checkpointState
-    const waitingForInput = isWaitingForInput()
-    const currentFreezeTime = checkpointFreezeTime()
-
-    // Should freeze timer when either checkpoint is active or waiting for input
-    const shouldFreeze = checkpointState?.active || waitingForInput
-
-    if (shouldFreeze && !currentFreezeTime) {
-      // Start freezing - set freeze time
-      setCheckpointFreezeTime(Date.now())
-    } else if (!shouldFreeze && currentFreezeTime) {
-      // Stop freezing - clear freeze time
-      setCheckpointFreezeTime(undefined)
-    }
-  })
-
-  // Use shared tick for runtime updates (singleton interval across components)
-  const tick = useTick()
-
   // Current agent for output
   const currentAgent = createMemo(() => {
     const s = state()
+
+    // In onboarding phase, there are no step agents - return null
+    // The output window will use controllerState instead
+    if (s.phase === 'onboarding') {
+      return null
+    }
+
     if (s.selectedItemType === "sub" && s.selectedSubAgentId) {
       for (const subAgents of s.subAgents.values()) {
         const found = subAgents.find((sa) => sa.id === s.selectedSubAgentId)
@@ -220,50 +187,73 @@ export function WorkflowShell(props: WorkflowShellProps) {
     if (s.selectedAgentId) {
       return s.agents.find((a) => a.id === s.selectedAgentId) ?? null
     }
-    const running = s.agents.find((a) => a.status === "running")
-    if (running) return running
+    // Check for running, delegated, or awaiting (resumed) agents
+    const active = s.agents.find((a) => a.status === "running" || a.status === "delegated" || a.status === "awaiting")
+    if (active) return active
     return s.agents[s.agents.length - 1] ?? null
   })
 
-  const logStream = useLogStream(() => currentAgent()?.monitoringId)
-
-  const runtime = createMemo(() => {
-    tick()
-    const effectiveEndTime = checkpointFreezeTime() ?? state().endTime
-    return formatRuntime(state().startTime, effectiveEndTime)
+  // In onboarding phase, use controller's monitoringId for log streaming
+  const logStream = useLogStream(() => {
+    const s = state()
+    if (s.phase === 'onboarding') {
+      return s.controllerState?.monitoringId
+    }
+    return currentAgent()?.monitoringId
   })
 
-  const totalTelemetry = createMemo(() => {
-    const s = state()
+  // Memoized total telemetry - only recalculates when agent/subagent/controller telemetry actually changes
+  const totalTelemetry = createMemo((prev: { tokensIn: number; tokensOut: number; cached?: number } | undefined) => {
+    const agents = state().agents
+    const subAgents = state().subAgents
+    const controller = state().controllerState
     let tokensIn = 0, tokensOut = 0, cached = 0
-    for (const agent of s.agents) {
+
+    for (const agent of agents) {
       tokensIn += agent.telemetry.tokensIn
       tokensOut += agent.telemetry.tokensOut
       cached += agent.telemetry.cached ?? 0
     }
-    for (const subAgents of s.subAgents.values()) {
-      for (const sub of subAgents) {
+    for (const subs of subAgents.values()) {
+      for (const sub of subs) {
         tokensIn += sub.telemetry.tokensIn
         tokensOut += sub.telemetry.tokensOut
         cached += sub.telemetry.cached ?? 0
       }
     }
-    return { tokensIn, tokensOut, cached: cached > 0 ? cached : undefined }
+    // Include controller telemetry
+    if (controller?.telemetry) {
+      tokensIn += controller.telemetry.tokensIn
+      tokensOut += controller.telemetry.tokensOut
+      cached += controller.telemetry.cached ?? 0
+    }
+
+    const result = { tokensIn, tokensOut, cached: cached > 0 ? cached : undefined }
+
+    // Only log when values actually change
+    if (!prev || prev.tokensIn !== tokensIn || prev.tokensOut !== tokensOut || prev.cached !== result.cached) {
+      debug('[TELEMETRY:6-TOTAL] totalTokensIn=%d, totalTokensOut=%d, totalCached=%s',
+        tokensIn, tokensOut, result.cached)
+    }
+
+    return result
   })
 
   const isCheckpointActive = () => state().checkpointState?.active ?? false
 
+  // Phase check - onboarding vs executing
+  const isOnboardingPhase = () => state().phase === 'onboarding'
+
   const handleCheckpointContinue = () => {
     ui.actions.setCheckpointState(null)
     ui.actions.setWorkflowStatus("running")
-    setCheckpointFreezeTime(undefined)
-    ;(process as NodeJS.EventEmitter).emit("checkpoint:continue")
+      ; (process as NodeJS.EventEmitter).emit("checkpoint:continue")
   }
 
   const handleCheckpointQuit = () => {
     ui.actions.setCheckpointState(null)
     ui.actions.setWorkflowStatus("stopped")
-    ;(process as NodeJS.EventEmitter).emit("checkpoint:quit")
+      ; (process as NodeJS.EventEmitter).emit("checkpoint:quit")
   }
 
   // Check if we have queued prompts (chained mode)
@@ -278,7 +268,7 @@ export function WorkflowShell(props: WorkflowShellProps) {
   // Check if output window is showing the active agent (running or at checkpoint)
   const isShowingRunningAgent = createMemo(() => {
     const s = state()
-    const active = s.agents.find((a) => a.status === "running" || a.status === "checkpoint")
+    const active = s.agents.find((a) => a.status === "running" || a.status === "delegated" || a.status === "awaiting")
     if (!active) return false
     // If no explicit selection, we're showing the active agent
     if (!s.selectedAgentId) return true
@@ -288,7 +278,9 @@ export function WorkflowShell(props: WorkflowShellProps) {
 
   // Auto-focus prompt box when input waiting becomes active
   createEffect(() => {
-    if (isWaitingForInput() && isShowingRunningAgent()) {
+    // In onboarding phase, focus prompt box when input is active (no step agents yet)
+    // In executing phase, only focus when showing the running agent
+    if (isWaitingForInput() && (isShowingRunningAgent() || isOnboardingPhase())) {
       setIsPromptBoxFocused(true)
     } else if (!isWaitingForInput()) {
       setIsPromptBoxFocused(false)
@@ -300,19 +292,39 @@ export function WorkflowShell(props: WorkflowShellProps) {
 
   const handleStopConfirm = () => {
     setShowStopModal(false)
-    const controlBus = getControlBus()
-    controlBus.emit("user-stop")
-    controlBus.emit("stop")
+      ; (process as NodeJS.EventEmitter).emit("workflow:user-stop")
+      ; (process as NodeJS.EventEmitter).emit("workflow:stop")
+      ; (process as NodeJS.EventEmitter).emit("workflow:return-home")
   }
 
   const handleStopCancel = () => {
     setShowStopModal(false)
   }
 
-  // Unified prompt submit handler - uses control bus input event
+  // Controller continue confirmation modal state
+  const [showControllerContinueModal, setShowControllerContinueModal] = createSignal(false)
+
+  const handleControllerContinueConfirm = () => {
+    setShowControllerContinueModal(false)
+      ; (process as NodeJS.EventEmitter).emit('workflow:controller-continue')
+  }
+
+  const handleControllerContinueCancel = () => {
+    setShowControllerContinueModal(false)
+    // Focus back to prompt box
+    setIsPromptBoxFocused(true)
+  }
+
+  // Unified prompt submit handler - uses single workflow:input event
   const handlePromptSubmit = (prompt: string) => {
     if (isWaitingForInput()) {
-      getControlBus().emit("input", { prompt: prompt || undefined })
+      // In onboarding phase, empty prompt shows confirmation dialog instead of ending immediately
+      if (isOnboardingPhase() && (!prompt || prompt.trim() === '')) {
+        debug('Empty prompt in onboarding phase - showing confirmation dialog')
+        setShowControllerContinueModal(true)
+        return
+      }
+      ; (process as NodeJS.EventEmitter).emit("workflow:input", { prompt: prompt || undefined })
       setIsPromptBoxFocused(false)
     }
   }
@@ -320,14 +332,14 @@ export function WorkflowShell(props: WorkflowShellProps) {
   // Skip all remaining prompts
   const handleSkip = () => {
     if (isWaitingForInput()) {
-      getControlBus().emit("input", { skip: true })
+      ; (process as NodeJS.EventEmitter).emit("workflow:input", { skip: true })
       setIsPromptBoxFocused(false)
     }
   }
 
   // Pause the workflow (aborts current step)
   const pauseWorkflow = () => {
-    getControlBus().emit("pause")
+    ; (process as NodeJS.EventEmitter).emit("workflow:pause")
   }
 
   // Toggle autonomous mode on/off
@@ -337,17 +349,22 @@ export function WorkflowShell(props: WorkflowShellProps) {
     // Read current state from file (source of truth)
     const controllerState = await loadControllerConfig(cmRoot)
     debug('[TOGGLE] controllerState: %s', JSON.stringify(controllerState))
-    const currentMode = controllerState?.autonomousMode ?? false
-    const newMode = !currentMode
 
-    debug('[TOGGLE] Current mode from file: %s, new mode: %s', currentMode, newMode)
+    const currentMode = controllerState?.autonomousMode ?? 'true' // Default to true if not set
 
-    // Check if controller is configured (required for autonomous mode)
-    if (newMode && !controllerState?.controllerConfig) {
-      debug('[TOGGLE] Cannot enable autonomous mode - no controller configured')
-      toast.show({ variant: "error", message: "Cannot enable: No controller configured", duration: 3000 })
+    // Prevent toggle if locked
+    if (currentMode === 'never' || currentMode === 'always') {
+      toast.show({
+        variant: "warning",
+        message: "Autonomous mode is locked by workflow configuration",
+        duration: 3000
+      })
       return
     }
+
+    const newMode = currentMode === 'true' ? 'false' : 'true'
+
+    debug('[TOGGLE] Current mode from file: %s, new mode: %s', currentMode, newMode)
 
     // Update UI state
     ui.actions.setAutonomousMode(newMode)
@@ -357,71 +374,30 @@ export function WorkflowShell(props: WorkflowShellProps) {
       await persistAutonomousMode(cmRoot, newMode)
       debug('[TOGGLE] Successfully persisted autonomousMode=%s', newMode)
       toast.show({
-        variant: newMode ? "success" : "warning",
-        message: newMode ? "Autonomous mode enabled" : "Autonomous mode disabled",
+        variant: newMode === 'true' ? "success" : "warning",
+        message: newMode === 'true' ? "Autonomous mode enabled" : "Autonomous mode disabled",
         duration: 3000
       })
     } catch (err) {
       debug('[TOGGLE] Failed to persist autonomousMode: %s', err)
       // Revert UI state on error
-      ui.actions.setAutonomousMode(currentMode)
+      ui.actions.setAutonomousMode(currentMode as any)
       toast.show({ variant: "error", message: "Failed to toggle autonomous mode", duration: 3000 })
     }
   }
 
-  // Handle engine preset selection
-  const handlePresetSelect = async (preset: string | null) => {
-    const cmRoot = path.join(resolvePath(props.currentDir), '.codemachine')
 
-    // Update UI state
-    ui.actions.setEnginePreset(preset)
-
-    // Update runtime context for immediate effect
-    setEngineSelectionContext({ preset: preset ?? undefined, fallbackEnabled: state().fallbackEnabled })
-
-    // Persist to config file
-    try {
-      const existingConfig = await loadEngineConfig(cmRoot)
-      await saveEngineConfig(cmRoot, { ...existingConfig, preset: preset ?? undefined })
-      debug('[SETTINGS] Persisted engine preset: %s', preset ?? 'default')
-      toast.show({
-        variant: "success",
-        message: preset ? `Engine preset: ${preset}` : "Using default engines",
-        duration: 3000
-      })
-    } catch (err) {
-      debug('[SETTINGS] Failed to persist preset: %s', err)
-      toast.show({ variant: "error", message: "Failed to save preset", duration: 3000 })
+  // Single-agent auto-collapse logic (Strict)
+  createEffect(() => {
+    const s = state()
+    // Always check: if single agent, enforce collapse
+    if (s.agents.length === 1) {
+      if (!s.timelineCollapsed) {
+        debug('[SHELL] Single agent detected, strictly collapsing timeline')
+        ui.actions.toggleTimeline()
+      }
     }
-
-    modals.setShowSettings(false)
-  }
-
-  // Handle fallback toggle
-  const handleFallbackToggle = async (enabled: boolean) => {
-    const cmRoot = path.join(resolvePath(props.currentDir), '.codemachine')
-
-    // Update UI state
-    ui.actions.setFallbackEnabled(enabled)
-
-    // Update runtime context for immediate effect
-    setEngineSelectionContext({ preset: state().selectedEnginePreset ?? undefined, fallbackEnabled: enabled })
-
-    // Persist to config file
-    try {
-      const existingConfig = await loadEngineConfig(cmRoot)
-      await saveEngineConfig(cmRoot, { ...existingConfig, fallbackEnabled: enabled })
-      debug('[SETTINGS] Persisted fallbackEnabled: %s', enabled)
-      toast.show({
-        variant: enabled ? "success" : "warning",
-        message: enabled ? "Fallback enabled" : "Fallback disabled - will wait for rate limit reset",
-        duration: 3000
-      })
-    } catch (err) {
-      debug('[SETTINGS] Failed to persist fallbackEnabled: %s', err)
-      toast.show({ variant: "error", message: "Failed to save fallback setting", duration: 3000 })
-    }
-  }
+  })
 
   const getMonitoringId = (uiAgentId: string): number | undefined => {
     const s = state()
@@ -437,9 +413,20 @@ export function WorkflowShell(props: WorkflowShellProps) {
   // Keyboard navigation
   useWorkflowKeyboard({
     getState: state,
-    actions: ui.actions,
+    actions: {
+      ...ui.actions,
+      toggleTimeline: () => {
+        const s = state()
+        // Prevent toggle if single agent (strict mode)
+        if (s.agents.length === 1) {
+          toast.show({ variant: "warning", message: "Timeline is locked for single-agent workflows", duration: 3000 })
+          return
+        }
+        ui.actions.toggleTimeline()
+      }
+    },
     calculateVisibleItems: getVisibleItems,
-    isModalBlocking: () => isCheckpointActive() || modals.isLogViewerActive() || modals.isHistoryActive() || modals.isHistoryLogViewerActive() || showStopModal() || isErrorModalActive() || modals.isSettingsActive(),
+    isModalBlocking: () => isCheckpointActive() || modals.isLogViewerActive() || modals.isHistoryActive() || modals.isHistoryLogViewerActive() || showStopModal() || isErrorModalActive() || showControllerContinueModal(),
     isPromptBoxFocused: () => isPromptBoxFocused(),
     isWaitingForInput,
     hasQueuedPrompts,
@@ -453,12 +440,17 @@ export function WorkflowShell(props: WorkflowShellProps) {
       return status === "running" || status === "paused" || status === "stopping"
     },
     getCurrentAgentId: () => currentAgent()?.id ?? null,
-    canFocusPromptBox: () => isWaitingForInput() && isShowingRunningAgent() && !isPromptBoxFocused(),
+    canFocusPromptBox: () => isWaitingForInput() && (isShowingRunningAgent() || isOnboardingPhase()) && !isPromptBoxFocused(),
     focusPromptBox: () => setIsPromptBoxFocused(true),
     exitPromptBoxFocus: () => setIsPromptBoxFocused(false),
-    isAutonomousMode: () => state().autonomousMode,
+    isAutonomousMode: () => state().autonomousMode === 'true' || state().autonomousMode === 'always',
     toggleAutonomousMode,
-    openSettings: () => modals.setShowSettings(true),
+    showControllerContinue: () => setShowControllerContinueModal(true),
+    hasController: () => !!state().controllerState,
+    returnToController: () => {
+      debug('Returning to controller - emitting workflow:return-to-controller')
+        ; (process as NodeJS.EventEmitter).emit('workflow:return-to-controller')
+    },
   })
 
   return (
@@ -468,22 +460,25 @@ export function WorkflowShell(props: WorkflowShellProps) {
       </box>
 
       <box flexDirection="row" flexGrow={1} gap={1}>
-        <Show when={!isTimelineCollapsed()}>
+        {/* Hide timeline in onboarding phase - only show output window */}
+        <Show when={!isTimelineCollapsed() && !isOnboardingPhase()}>
           <box flexDirection="column" width={showOutputPanel() ? "35%" : "100%"}>
-            <AgentTimeline state={state()} onToggleExpand={(id) => ui.actions.toggleExpand(id)} availableHeight={state().visibleItemCount} availableWidth={Math.floor((dimensions()?.width ?? 80) * (showOutputPanel() ? 0.35 : 1))} isPaused={isWaitingForInput()} isPromptBoxFocused={isPromptBoxFocused()} />
+            <AgentTimeline state={state()} onToggleExpand={(id) => ui.actions.toggleExpand(id)} availableHeight={state().visibleItemCount} availableWidth={Math.floor((dimensions()?.width ?? 80) * (showOutputPanel() ? 0.35 : 1))} isPromptBoxFocused={isPromptBoxFocused()} />
           </box>
         </Show>
-        <Show when={showOutputPanel() || isTimelineCollapsed()}>
-          <box flexDirection="column" width={isTimelineCollapsed() ? "100%" : "65%"}>
+        <Show when={showOutputPanel() || isTimelineCollapsed() || isOnboardingPhase()}>
+          {/* In onboarding phase, output window takes full width */}
+          <box flexDirection="column" width={isTimelineCollapsed() || isOnboardingPhase() ? "100%" : "65%"}>
             <OutputWindow
               currentAgent={currentAgent()}
-              availableWidth={Math.floor((dimensions()?.width ?? 80) * (isTimelineCollapsed() ? 1 : 0.65))}
+              controllerState={state().controllerState}
+              availableWidth={Math.floor((dimensions()?.width ?? 80) * (isTimelineCollapsed() || isOnboardingPhase() ? 1 : 0.65))}
               lines={logStream.lines}
               isLoading={logStream.isLoading}
               isConnecting={logStream.isConnecting}
               error={logStream.error}
               latestThinking={logStream.latestThinking}
-              inputState={isShowingRunningAgent() ? state().inputState : null}
+              inputState={isOnboardingPhase() ? state().inputState : (isShowingRunningAgent() ? state().inputState : null)}
               workflowStatus={state().workflowStatus}
               isPromptBoxFocused={isPromptBoxFocused()}
               onPromptSubmit={handlePromptSubmit}
@@ -495,8 +490,8 @@ export function WorkflowShell(props: WorkflowShellProps) {
       </box>
 
       <box flexShrink={0} flexDirection="column">
-        <TelemetryBar workflowName={state().workflowName} runtime={runtime()} status={state().workflowStatus} total={totalTelemetry()} autonomousMode={state().autonomousMode} rateLimitState={state().rateLimitState} />
-        <StatusFooter autonomousMode={state().autonomousMode} />
+        <TelemetryBar workflowName={state().workflowName} runtime={timer.workflowRuntime()} status={state().workflowStatus} total={totalTelemetry()} autonomousMode={state().autonomousMode} />
+        <StatusFooter autonomousMode={state().autonomousMode} phase={state().phase} hasController={!!state().controllerState} />
       </box>
 
       <Show when={isCheckpointActive()}>
@@ -535,15 +530,9 @@ export function WorkflowShell(props: WorkflowShellProps) {
         </box>
       </Show>
 
-      <Show when={modals.isSettingsActive()}>
-        <box position="absolute" left={0} top={0} width="100%" height="100%" zIndex={1000}>
-          <SettingsModal
-            currentPreset={state().selectedEnginePreset}
-            fallbackEnabled={state().fallbackEnabled}
-            onSelect={handlePresetSelect}
-            onFallbackToggle={handleFallbackToggle}
-            onClose={() => modals.setShowSettings(false)}
-          />
+      <Show when={showControllerContinueModal()}>
+        <box position="absolute" left={0} top={0} width="100%" height="100%" zIndex={2000}>
+          <ControllerContinueModal onConfirm={handleControllerContinueConfirm} onCancel={handleControllerContinueCancel} />
         </box>
       </Show>
     </box>

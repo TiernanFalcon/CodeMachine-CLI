@@ -16,6 +16,21 @@ const LOG_LEVELS = {
 type LogLevel = keyof typeof LOG_LEVELS;
 
 let debugLogStream: fs.WriteStream | null = null;
+let appLogStream: fs.WriteStream | null = null;
+
+/**
+ * Global shutdown flag - when true, error/warn logs are suppressed
+ * Set this when handling SIGINT/Ctrl+C for clean exit
+ */
+let isShuttingDown = false;
+
+export function setShuttingDown(value: boolean): void {
+  isShuttingDown = value;
+}
+
+export function getShuttingDown(): boolean {
+  return isShuttingDown;
+}
 
 function resolveRequestedLevel(): string {
   const explicit = process.env.LOG_LEVEL;
@@ -66,6 +81,36 @@ export function setDebugLogFile(filePath: string | null): void {
   debugLogStream = fs.createWriteStream(filePath, { flags: 'a' });
 }
 
+export function setAppLogFile(filePath: string | null): void {
+  if (appLogStream) {
+    appLogStream.end();
+    appLogStream = null;
+  }
+
+  if (!filePath) {
+    return;
+  }
+
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  appLogStream = fs.createWriteStream(filePath, { flags: 'a' });
+}
+
+function writeAppLog(message: string, ...args: unknown[]): void {
+  if (!appLogStream) {
+    return;
+  }
+
+  const timestamp = new Date().toISOString();
+  const formatted = formatMessage(message, ...args);
+  appLogStream.write(`${timestamp} ${formatted}\n`);
+}
+
+export function appDebug(message: string, ...args: unknown[]): void {
+  if (shouldLog('debug')) {
+    writeAppLog(`[DEBUG] ${message}`, ...args);
+  }
+}
+
 export function debug(message: string, ...args: unknown[]): void {
   if (shouldLog('debug')) {
     writeDebugLog(`[DEBUG] ${message}`, ...args);
@@ -80,6 +125,7 @@ export function info(message: string, ...args: unknown[]): void {
 }
 
 export function warn(message: string, ...args: unknown[]): void {
+  if (isShuttingDown) return; // Suppress during graceful shutdown
   if (shouldLog('warn')) {
     // Write directly to stderr to bypass console hijacking
     const formatted = formatMessage(`[WARN] ${message}`, ...args);
@@ -88,6 +134,7 @@ export function warn(message: string, ...args: unknown[]): void {
 }
 
 export function error(message: string, ...args: unknown[]): void {
+  if (isShuttingDown) return; // Suppress during graceful shutdown
   if (shouldLog('error')) {
     // Write directly to stderr to bypass console hijacking
     const formatted = formatMessage(`[ERROR] ${message}`, ...args);

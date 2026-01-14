@@ -1,15 +1,19 @@
-import { stat, rm, writeFile, mkdir } from 'node:fs/promises';
+import { stat } from 'node:fs/promises';
 import * as path from 'node:path';
 import { homedir } from 'node:os';
 
 import { expandHomeDir } from '../../../../shared/utils/index.js';
-import { metadata } from './metadata.js';
 import {
-  isCliInstalled,
-  isCliNotFoundError,
+  checkCliInstalled,
   displayCliNotInstalledError,
-  displayCliNotFoundError,
-} from '../../core/cli-utils.js';
+  isCommandNotFoundError,
+  ensureAuthDirectory,
+  createCredentialFile,
+  cleanupAuthFiles,
+  getNextAuthAction,
+} from '../../core/auth.js';
+import { metadata } from './metadata.js';
+import { ENV } from './config.js';
 
 export interface ClaudeAuthOptions {
   claudeConfigDir?: string;
@@ -23,8 +27,8 @@ export function resolveClaudeConfigDir(options?: ClaudeAuthOptions): string {
     return expandHomeDir(options.claudeConfigDir);
   }
 
-  if (process.env.CLAUDE_CONFIG_DIR) {
-    return expandHomeDir(process.env.CLAUDE_CONFIG_DIR);
+  if (process.env[ENV.CLAUDE_HOME]) {
+    return expandHomeDir(process.env[ENV.CLAUDE_HOME]!);
   }
 
   // Authentication is shared globally
@@ -65,7 +69,7 @@ export async function isAuthenticated(options?: ClaudeAuthOptions): Promise<bool
   try {
     await stat(credPath);
     return true;
-  } catch (_error) {
+  } catch {
     return false;
   }
 }
@@ -90,16 +94,8 @@ export async function ensureAuth(options?: ClaudeAuthOptions): Promise<boolean> 
     // Credentials file doesn't exist
   }
 
-  if (process.env.CODEMACHINE_SKIP_AUTH === '1') {
-    // Create a placeholder for testing/dry-run mode
-    const claudeDir = path.dirname(credPath);
-    await mkdir(claudeDir, { recursive: true });
-    await writeFile(credPath, '{}', { encoding: 'utf8' });
-    return true;
-  }
-
   // Check if CLI is installed
-  const cliInstalled = await isCliInstalled(metadata.cliBinary);
+  const cliInstalled = await checkCliInstalled(metadata.cliBinary);
   if (!cliInstalled) {
     displayCliNotInstalledError(metadata);
     throw new Error(`${metadata.name} CLI is not installed.`);
@@ -119,10 +115,17 @@ export async function ensureAuth(options?: ClaudeAuthOptions): Promise<boolean> 
     });
     await proc.exited;
   } catch (error) {
-    if (isCliNotFoundError(error)) {
-      displayCliNotFoundError(metadata, 'setup-token');
+    if (isCommandNotFoundError(error)) {
+      console.error(`\n────────────────────────────────────────────────────────────`);
+      console.error(`  ⚠️  ${metadata.name} CLI Not Found`);
+      console.error(`────────────────────────────────────────────────────────────`);
+      console.error(`\n'${metadata.cliBinary} setup-token' failed because the CLI is missing.`);
+      console.error(`Please install ${metadata.name} CLI before trying again:\n`);
+      console.error(`  ${metadata.installCommand}\n`);
+      console.error(`────────────────────────────────────────────────────────────\n`);
       throw new Error(`${metadata.name} CLI is not installed.`);
     }
+
     throw error;
   }
 
@@ -152,22 +155,12 @@ export async function ensureAuth(options?: ClaudeAuthOptions): Promise<boolean> 
 export async function clearAuth(options?: ClaudeAuthOptions): Promise<void> {
   const configDir = resolveClaudeConfigDir(options);
   const authPaths = getClaudeAuthPaths(configDir);
-
-  // Remove all auth-related files
-  await Promise.all(
-    authPaths.map(async (authPath) => {
-      try {
-        await rm(authPath, { force: true });
-      } catch (_error) {
-        // Ignore removal errors; treat as cleared
-      }
-    }),
-  );
+  await cleanupAuthFiles(authPaths);
 }
 
 /**
  * Returns the next auth menu action based on current auth state
  */
 export async function nextAuthMenuAction(options?: ClaudeAuthOptions): Promise<'login' | 'logout'> {
-  return (await isAuthenticated(options)) ? 'logout' : 'login';
+  return getNextAuthAction(await isAuthenticated(options));
 }

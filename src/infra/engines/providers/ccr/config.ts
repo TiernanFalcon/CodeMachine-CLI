@@ -1,16 +1,23 @@
 /**
- * CCR (Claude Code Runner) engine configuration
+ * CCR (Claude Code Router) engine configuration and model mapping
  */
 
 export interface CCRConfig {
   /**
-   * Optional model identifier for CCR
+   * Model to use for CCR execution
    */
   model?: string;
+
   /**
    * Working directory for execution
    */
-  workingDir?: string;
+  workingDir: string;
+
+  /**
+   * Optional custom CCR config directory
+   * Defaults to ~/.codemachine/ccr
+   */
+  ccrConfigDir?: string;
 }
 
 /**
@@ -31,6 +38,5 @@ export const DEFAULT_TIMEOUT = 1800000;
  * Environment variable names
  */
 export const ENV = {
-  SKIP_CCR: 'CODEMACHINE_SKIP_CCR',
-  PLAIN_LOGS: 'CODEMACHINE_PLAIN_LOGS',
+  CCR_HOME: 'CODEMACHINE_CCR_HOME',
 } as const;

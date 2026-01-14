@@ -30,6 +30,10 @@ Define the core user experience, platform requirements, and what makes the inter
 
 ## CORE EXPERIENCE DISCOVERY SEQUENCE:
 
+### 0. Save Previous Step Content
+
+**First Action:** Create the UX Design Specification document at `.codemachine/artifacts/ux-design-spec-{date}.md` using the content confirmed in Step 1.
+
 ### 1. Define Core User Action
 
 Start by identifying the most important user interaction:
@@ -123,18 +127,7 @@ Prepare the content to append to the document:
 [Guiding principles for UX decisions based on conversation]
 ```
 
-### 7. Step Completion
-
-**Save Content:**
-Append the content from step 6 to the UX Design Specification document now.
-
-**Confirmation:**
-"Content saved to document.
-
-I've defined the core user experience for {{project_name}} based on our conversation. This establishes the foundation for all our UX design decisions.
-
-- If you want to **modify or add details**, just tell me what you'd like to change
-- If you're satisfied, **press Enter in the promptbox to go to the next step**"
+{step_completion}
 
 ## SUCCESS METRICS:
 

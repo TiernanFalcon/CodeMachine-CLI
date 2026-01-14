@@ -19,30 +19,47 @@ export function createAgentActions(ctx: AgentActionsContext) {
   function addAgent(agent: WorkflowState["agents"][number]): void {
     const state = ctx.getState()
     ctx.setState({ ...state, agents: [...state.agents, agent] })
+    // Auto-select if this agent is running or delegated (matches updateAgentStatus behavior)
+    if (agent.status === "running" || agent.status === "delegated") {
+      ctx.selectItem(agent.id, "main", undefined, true)
+    }
     ctx.notify()
   }
 
   function updateAgentStatus(agentId: string, status: AgentStatus): void {
     const state = ctx.getState()
-    const shouldSetEndTime = status === "completed" || status === "failed" || status === "skipped"
-    const shouldSetStartTime = status === "running"
     ctx.setState({
       ...state,
       agents: state.agents.map((agent) =>
-        agent.id === agentId
-          ? {
-              ...agent,
-              status,
-              startTime: shouldSetStartTime ? Date.now() : agent.startTime,
-              endTime: shouldSetEndTime ? Date.now() : agent.endTime,
-            }
-          : agent,
+        agent.id === agentId ? { ...agent, status } : agent,
       ),
     })
-    if (status === "running") {
+    if (status === "running" || status === "delegated") {
       ctx.selectItem(agentId, "main", undefined, true)
     }
     ctx.notifyImmediate()
+  }
+
+  function updateAgentStartTime(agentId: string, startTime: number): void {
+    const state = ctx.getState()
+    ctx.setState({
+      ...state,
+      agents: state.agents.map((agent) =>
+        agent.id === agentId ? { ...agent, startTime } : agent,
+      ),
+    })
+    ctx.notify()
+  }
+
+  function updateAgentDuration(agentId: string, duration: number): void {
+    const state = ctx.getState()
+    ctx.setState({
+      ...state,
+      agents: state.agents.map((agent) =>
+        agent.id === agentId ? { ...agent, duration, endTime: Date.now() } : agent,
+      ),
+    })
+    ctx.notify()
   }
 
   function updateAgentEngine(agentId: string, engine: string): void {
@@ -124,6 +141,8 @@ export function createAgentActions(ctx: AgentActionsContext) {
   return {
     addAgent,
     updateAgentStatus,
+    updateAgentStartTime,
+    updateAgentDuration,
     updateAgentEngine,
     updateAgentModel,
     updateAgentTelemetry,

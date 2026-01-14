@@ -14,14 +14,13 @@ import { getTimelineLayout } from "../../state/navigation"
 import { MainAgentNode } from "./main-agent-node"
 import { SubAgentSummary } from "./sub-agent-summary"
 import { SubAgentNode } from "./sub-agent-node"
-import { UIElementNode } from "./ui-element-node"
+import { SeparatorNode } from "./separator-node"
 
 export interface AgentTimelineProps {
   state: WorkflowState
   onToggleExpand: (agentId: string) => void
   availableHeight?: number
   availableWidth?: number
-  isPaused?: boolean
   isPromptBoxFocused?: boolean
 }
 
@@ -90,7 +89,7 @@ export function AgentTimeline(props: AgentTimelineProps) {
 
               // Main agent
               if (item.type === "main") {
-                return <MainAgentNode agent={item.agent} isSelected={isMainSelected(item.id)} isPaused={props.isPaused} availableWidth={props.availableWidth} />
+                return <MainAgentNode agent={item.agent} isSelected={isMainSelected(item.id)} availableWidth={props.availableWidth} />
               }
 
               // Sub-agent summary (collapsed)
@@ -109,14 +108,14 @@ export function AgentTimeline(props: AgentTimelineProps) {
                 )
               }
 
-              // UI element
-              if (item.type === "ui") {
-                return <UIElementNode uiElement={item.uiElement} />
+              // Separator (visual divider)
+              if (item.type === "separator") {
+                return <SeparatorNode separator={item.separator} />
               }
 
               // Sub-agent (expanded)
               if (item.type === "sub") {
-                return <SubAgentNode agent={item.agent} isSelected={isSubSelected(item.id)} isPaused={props.isPaused} />
+                return <SubAgentNode agent={item.agent} isSelected={isSubSelected(item.id)} />
               }
 
               return null

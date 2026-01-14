@@ -5,11 +5,11 @@ import type { WorkflowTemplate } from './types.js';
 import { validateWorkflowTemplate } from './validator.js';
 import { ensureTemplateGlobals } from './globals.js';
 import { resolvePackageRoot } from '../../shared/runtime/root.js';
+import { appDebug } from '../../shared/logging/logger.js';
 
 // Package root resolution
 export const packageRoot = resolvePackageRoot(import.meta.url, 'workflow templates loader');
-
-export const templatesDir = path.resolve(packageRoot, 'templates', 'workflows');
+appDebug('[TemplateLoader] packageRoot resolved to: %s', packageRoot);
 
 // Module loading
 export async function loadWorkflowModule(modPath: string): Promise<unknown> {
@@ -33,56 +33,64 @@ export async function loadWorkflowModule(modPath: string): Promise<unknown> {
 }
 
 // Template loading
-export async function loadTemplate(cwd: string, templatePath?: string): Promise<WorkflowTemplate> {
-  const resolvedTemplateOverride = templatePath
-    ? path.isAbsolute(templatePath)
-      ? templatePath
-      : path.resolve(packageRoot, templatePath)
-    : undefined;
-  const codemachineTemplate = path.resolve(templatesDir, 'codemachine-one.workflow.js');
-  const candidates = [resolvedTemplateOverride, codemachineTemplate].filter(Boolean) as string[];
+export async function loadTemplate(cwd: string, templatePath: string): Promise<WorkflowTemplate> {
+  appDebug('[TemplateLoader] loadTemplate called');
+  appDebug('[TemplateLoader] templatePath input: %s', templatePath);
+  appDebug('[TemplateLoader] packageRoot: %s', packageRoot);
+  appDebug('[TemplateLoader] isAbsolute: %s', path.isAbsolute(templatePath));
 
-  const errors: string[] = [];
-  for (const modPath of candidates) {
-    try {
-      const tpl = (await loadWorkflowModule(modPath)) as unknown;
-      const result = validateWorkflowTemplate(tpl);
-      if (result.valid) return tpl as WorkflowTemplate;
-      const rel = path.relative(cwd, modPath);
-      errors.push(`${rel}: ${result.errors.join('; ')}`);
-    } catch (e) {
-      const rel = path.relative(cwd, modPath);
-      errors.push(`${rel}: ${e instanceof Error ? e.message : String(e)}`);
+  const resolvedPath = path.isAbsolute(templatePath)
+    ? templatePath
+    : path.resolve(packageRoot, templatePath);
+
+  appDebug('[TemplateLoader] resolvedPath: %s', resolvedPath);
+
+  try {
+    appDebug('[TemplateLoader] Loading module from: %s', resolvedPath);
+    const tpl = (await loadWorkflowModule(resolvedPath)) as unknown;
+    const result = validateWorkflowTemplate(tpl);
+    if (result.valid) {
+      appDebug('[TemplateLoader] Template loaded successfully from: %s', resolvedPath);
+      return tpl as WorkflowTemplate;
     }
+    const rel = path.relative(cwd, resolvedPath);
+    throw new Error(`Template validation failed for ${rel}: ${result.errors.join('; ')}`);
+  } catch (e) {
+    appDebug('[TemplateLoader] Failed to load template: %s', e instanceof Error ? e.message : String(e));
+    if (e instanceof Error && e.message.includes('Template validation failed')) {
+      throw e;
+    }
+    const rel = path.relative(cwd, resolvedPath);
+    throw new Error(`Failed to load template ${rel}: ${e instanceof Error ? e.message : String(e)}`);
   }
-  const looked = candidates.map((p) => path.relative(cwd, p)).join(', ');
-  const details = errors.length ? `\nValidation errors:\n- ${errors.join('\n- ')}` : '';
-  throw new Error(`No workflow template found. Looked for: ${looked}${details}`);
 }
 
-export async function loadTemplateWithPath(cwd: string, templatePath?: string): Promise<{ template: WorkflowTemplate; resolvedPath: string }> {
-  const resolvedTemplateOverride = templatePath
-    ? path.isAbsolute(templatePath)
-      ? templatePath
-      : path.resolve(packageRoot, templatePath)
-    : undefined;
-  const codemachineTemplate = path.resolve(templatesDir, 'codemachine-one.workflow.js');
-  const candidates = [resolvedTemplateOverride, codemachineTemplate].filter(Boolean) as string[];
+export async function loadTemplateWithPath(cwd: string, templatePath: string): Promise<{ template: WorkflowTemplate; resolvedPath: string }> {
+  appDebug('[TemplateLoader] loadTemplateWithPath called');
+  appDebug('[TemplateLoader] templatePath input: %s', templatePath);
+  appDebug('[TemplateLoader] packageRoot: %s', packageRoot);
 
-  const errors: string[] = [];
-  for (const modPath of candidates) {
-    try {
-      const tpl = (await loadWorkflowModule(modPath)) as unknown;
-      const result = validateWorkflowTemplate(tpl);
-      if (result.valid) return { template: tpl as WorkflowTemplate, resolvedPath: modPath };
-      const rel = path.relative(cwd, modPath);
-      errors.push(`${rel}: ${result.errors.join('; ')}`);
-    } catch (e) {
-      const rel = path.relative(cwd, modPath);
-      errors.push(`${rel}: ${e instanceof Error ? e.message : String(e)}`);
+  const resolvedPath = path.isAbsolute(templatePath)
+    ? templatePath
+    : path.resolve(packageRoot, templatePath);
+
+  appDebug('[TemplateLoader] resolvedPath: %s', resolvedPath);
+
+  try {
+    const tpl = (await loadWorkflowModule(resolvedPath)) as unknown;
+    const result = validateWorkflowTemplate(tpl);
+    if (result.valid) {
+      appDebug('[TemplateLoader] Template loaded successfully from: %s', resolvedPath);
+      return { template: tpl as WorkflowTemplate, resolvedPath };
     }
+    const rel = path.relative(cwd, resolvedPath);
+    throw new Error(`Template validation failed for ${rel}: ${result.errors.join('; ')}`);
+  } catch (e) {
+    appDebug('[TemplateLoader] Failed to load template: %s', e instanceof Error ? e.message : String(e));
+    if (e instanceof Error && e.message.includes('Template validation failed')) {
+      throw e;
+    }
+    const rel = path.relative(cwd, resolvedPath);
+    throw new Error(`Failed to load template ${rel}: ${e instanceof Error ? e.message : String(e)}`);
   }
-  const looked = candidates.map((p) => path.relative(cwd, p)).join(', ');
-  const details = errors.length ? `\nValidation errors:\n- ${errors.join('\n- ')}` : '';
-  throw new Error(`No workflow template found. Looked for: ${looked}${details}`);
 }

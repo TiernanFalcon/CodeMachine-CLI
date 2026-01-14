@@ -6,18 +6,17 @@
  * Display a single main agent with status, telemetry, and duration
  */
 
-import { Show, createSignal, createEffect, on } from "solid-js"
+import { Show } from "solid-js"
 import { useTheme } from "@tui/shared/context/theme"
-import { useTick } from "@tui/shared/hooks/tick"
+import { useTimer, formatDuration } from "@tui/shared/services"
 import { Spinner } from "@tui/shared/components/spinner"
 import type { AgentState } from "../../state/types"
-import { formatDuration, truncate } from "../../state/formatters"
+import { truncate } from "../../state/formatters"
 import { getStatusIcon, getStatusColor } from "./status-utils"
 
 export interface MainAgentNodeProps {
   agent: AgentState
   isSelected: boolean
-  isPaused?: boolean
   availableWidth?: number
 }
 
@@ -28,59 +27,29 @@ const MIN_WIDTH_FOR_ENGINE = 45
 
 export function MainAgentNode(props: MainAgentNodeProps) {
   const themeCtx = useTheme()
-  const now = useTick()
+  const timer = useTimer()
 
   // Only show engine if timeline section is wide enough
   const showEngine = () => (props.availableWidth ?? 80) >= MIN_WIDTH_FOR_ENGINE
 
   const color = () => props.agent.error ? themeCtx.theme.error : getStatusColor(props.agent.status, themeCtx.theme)
 
-  // Store pause state for timer freeze/resume
-  const [pauseStartTime, setPauseStartTime] = createSignal<number | null>(null)
-  const [totalPausedTime, setTotalPausedTime] = createSignal<number>(0)
-
-  // Handle pause/resume transitions
-  createEffect(on(
-    () => props.isPaused,
-    (isPaused, wasPaused) => {
-      if (isPaused && !wasPaused) {
-        // Just paused - record the time
-        setPauseStartTime(Date.now())
-      } else if (!isPaused && wasPaused) {
-        // Just resumed - add pause duration to total
-        const pauseStart = pauseStartTime()
-        if (pauseStart !== null) {
-          setTotalPausedTime(prev => prev + (Date.now() - pauseStart))
-        }
-        setPauseStartTime(null)
-      }
-    },
-    { defer: false }
-  ))
-
+  // Duration: running/awaiting = live timer, completed = stored duration, queued = 00:00
   const duration = () => {
-    const { startTime, endTime, status } = props.agent
+    const { duration: storedDuration, status } = props.agent
 
-    if (endTime) {
-      return formatDuration((endTime - startTime) / 1000)
+    // Completed - use stored duration
+    if (storedDuration !== undefined) {
+      return formatDuration(storedDuration)
     }
 
-    if (status !== "running" || startTime <= 0) {
-      return ""
+    // Running, delegated, or awaiting - live timer (shows frozen time when paused)
+    if (status === "running" || status === "delegated" || status === "awaiting") {
+      return timer.agentDuration(props.agent.id)
     }
 
-    const pauseStart = pauseStartTime()
-    const totalPaused = totalPausedTime()
-
-    // If currently paused, use pauseStartTime (don't call now())
-    if (props.isPaused && pauseStart !== null) {
-      const elapsed = (pauseStart - startTime - totalPaused) / 1000
-      return formatDuration(Math.max(0, elapsed))
-    }
-
-    // Running - use live time minus total paused time
-    const elapsed = (now() - startTime - totalPaused) / 1000
-    return formatDuration(Math.max(0, elapsed))
+    // Queued/pending - don't show duration
+    return ""
   }
 
   const hasLoopRound = () => props.agent.loopRound && props.agent.loopRound > 0
@@ -95,10 +64,10 @@ export function MainAgentNode(props: MainAgentNodeProps) {
       {/* Main line - use wrapMode="none" and overflow="hidden" to prevent text wrapping */}
       <box flexDirection="row" overflow="hidden">
         <text wrapMode="none" fg={themeCtx.theme.text}>{selectionPrefix()}</text>
-        <Show when={props.agent.status === "running"} fallback={
+        <Show when={props.agent.status === "running" || props.agent.status === "delegated"} fallback={
           <text wrapMode="none" fg={color()}>{getStatusIcon(props.agent.status)} </text>
         }>
-          <Show when={props.isPaused} fallback={
+          <Show when={timer.isPaused()} fallback={
             <>
               <Spinner color={color()} />
               <text wrapMode="none"> </text>
@@ -115,19 +84,6 @@ export function MainAgentNode(props: MainAgentNodeProps) {
           <text wrapMode="none" fg={themeCtx.theme.textMuted}> • {duration()}</text>
         </Show>
       </box>
-
-      {/* Context line (goal, file, action) */}
-      <Show when={props.agent.goal || props.agent.currentFile || props.agent.currentAction}>
-        <box paddingLeft={4}>
-          <text fg={themeCtx.theme.textMuted} wrapMode="none">
-            {props.agent.goal && `Goal: ${truncate(props.agent.goal, 40)}`}
-            {props.agent.goal && (props.agent.currentFile || props.agent.currentAction) && " | "}
-            {props.agent.currentFile && `File: ${truncate(props.agent.currentFile, 30)}`}
-            {props.agent.currentFile && props.agent.currentAction && " | "}
-            {props.agent.currentAction && truncate(props.agent.currentAction, 40)}
-          </text>
-        </box>
-      </Show>
 
       {/* Loop cycle line (if in loop) */}
       <Show when={hasLoopRound()}>

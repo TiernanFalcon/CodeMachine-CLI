@@ -1,23 +1,27 @@
-import { stat, rm, writeFile, mkdir } from 'node:fs/promises';
+import { stat } from 'node:fs/promises';
 import * as path from 'node:path';
 import { homedir } from 'node:os';
 
 import { expandHomeDir } from '../../../../shared/utils/index.js';
-import { metadata } from './metadata.js';
 import {
-  isCliInstalled,
-  isCliNotFoundError,
+  checkCliInstalled,
   displayCliNotInstalledError,
-  displayCliNotFoundError,
-} from '../../core/cli-utils.js';
+  isCommandNotFoundError,
+  ensureAuthDirectory,
+  createCredentialFile,
+  cleanupAuthFiles,
+  getNextAuthAction,
+} from '../../core/auth.js';
+import { metadata } from './metadata.js';
+import { ENV } from './config.js';
 
 /**
  * Resolves the Codex home directory
  */
 async function resolveCodexHome(codexHome?: string): Promise<string> {
-  const rawPath = codexHome ?? process.env.CODEX_HOME ?? path.join(homedir(), '.codemachine', 'codex');
+  const rawPath = codexHome ?? process.env[ENV.CODEX_HOME] ?? path.join(homedir(), '.codemachine', 'codex');
   const targetHome = expandHomeDir(rawPath);
-  await mkdir(targetHome, { recursive: true });
+  await ensureAuthDirectory(targetHome);
   return targetHome;
 }
 
@@ -31,7 +35,7 @@ export async function isAuthenticated(): Promise<boolean> {
   try {
     await stat(authPath);
     return true;
-  } catch (_error) {
+  } catch {
     return false;
   }
 }
@@ -48,13 +52,8 @@ export async function ensureAuth(): Promise<boolean> {
     // Auth file doesn't exist
   }
 
-  if (process.env.CODEMACHINE_SKIP_AUTH === '1') {
-    await writeFile(authPath, '{}', { encoding: 'utf8' });
-    return true;
-  }
-
   // Check if CLI is installed
-  const cliInstalled = await isCliInstalled(metadata.cliBinary);
+  const cliInstalled = await checkCliInstalled(metadata.cliBinary);
   if (!cliInstalled) {
     displayCliNotInstalledError(metadata);
     throw new Error(`${metadata.name} CLI is not installed.`);
@@ -71,10 +70,17 @@ export async function ensureAuth(): Promise<boolean> {
     });
     await proc.exited;
   } catch (error) {
-    if (isCliNotFoundError(error)) {
-      displayCliNotFoundError(metadata, 'login');
+    if (isCommandNotFoundError(error)) {
+      console.error(`\n────────────────────────────────────────────────────────────`);
+      console.error(`  ⚠️  ${metadata.name} CLI Not Found`);
+      console.error(`────────────────────────────────────────────────────────────`);
+      console.error(`\n'${metadata.cliBinary} login' failed because the CLI is missing.`);
+      console.error(`Please install ${metadata.name} CLI before trying again:\n`);
+      console.error(`  ${metadata.installCommand}\n`);
+      console.error(`────────────────────────────────────────────────────────────\n`);
       throw new Error(`${metadata.name} CLI is not installed.`);
     }
+
     throw error;
   }
 
@@ -82,7 +88,7 @@ export async function ensureAuth(): Promise<boolean> {
   try {
     await stat(authPath);
   } catch {
-    await writeFile(authPath, '{}', 'utf8');
+    await createCredentialFile(authPath, {});
   }
 
   return true;
@@ -91,13 +97,9 @@ export async function ensureAuth(): Promise<boolean> {
 export async function clearAuth(): Promise<void> {
   const codexHome = await resolveCodexHome();
   const authPath = getAuthFilePath(codexHome);
-  try {
-    await rm(authPath, { force: true });
-  } catch (_error) {
-    // Ignore removal errors; treat as cleared
-  }
+  await cleanupAuthFiles([authPath]);
 }
 
 export async function nextAuthMenuAction(): Promise<'login' | 'logout'> {
-  return (await isAuthenticated()) ? 'logout' : 'login';
+  return getNextAuthAction(await isAuthenticated());
 }

@@ -5,6 +5,7 @@ import { spawnProcess } from '../../../../process/spawn.js';
 import { buildCcrExecCommand } from './commands.js';
 import { metadata } from '../metadata.js';
 import { expandHomeDir } from '../../../../../shared/utils/index.js';
+import { ENV } from '../config.js';
 import { logger } from '../../../../../shared/logging/index.js';
 import { createTelemetryCapture } from '../../../../../shared/telemetry/index.js';
 import { formatThinking, formatCommand, formatResult } from '../../../../../shared/formatters/outputMarkers.js';
@@ -12,10 +13,13 @@ import { formatThinking, formatCommand, formatResult } from '../../../../../shar
 export interface RunCcrOptions {
   prompt: string;
   workingDir: string;
+  resumeSessionId?: string;
+  resumePrompt?: string;
   model?: string;
   env?: NodeJS.ProcessEnv;
   onData?: (chunk: string) => void;
   onErrorData?: (chunk: string) => void;
+  onSessionId?: (sessionId: string) => void;
   abortSignal?: AbortSignal;
   timeout?: number; // Timeout in milliseconds (default: 1800000ms = 30 minutes)
 }
@@ -25,7 +29,19 @@ export interface RunCcrResult {
   stderr: string;
 }
 
-const ANSI_ESCAPE_SEQUENCE = new RegExp(String.raw`\u001B\[[0-9;?]*[ -/]*[@-~]`, 'g');
+/**
+ * Build the final resume prompt combining steering instruction with user message
+ */
+function buildResumePrompt(userPrompt?: string): string {
+  const defaultPrompt = 'Continue from where you left off.';
+
+  if (!userPrompt) {
+    return defaultPrompt;
+  }
+
+  // Combine steering instruction with user's message
+  return `[USER STEERING] The user paused this session to give you new direction. Continue from where you left off, but prioritize the user's request: "${userPrompt}"`;
+}
 
 // Track tool names for associating with results
 const toolNameMap = new Map<string, string>();
@@ -105,7 +121,7 @@ function formatStreamJsonLine(line: string): string | null {
 }
 
 export async function runCcr(options: RunCcrOptions): Promise<RunCcrResult> {
-  const { prompt, workingDir, model, env, onData, onErrorData, abortSignal, timeout = 1800000 } = options;
+  const { prompt, workingDir, resumeSessionId, resumePrompt, model, env, onData, onErrorData, onSessionId, abortSignal, timeout = 1800000 } = options;
 
   // Clear tool name map at start of each run to prevent memory leaks
   // and data corruption between consecutive runs
@@ -120,8 +136,8 @@ export async function runCcr(options: RunCcrOptions): Promise<RunCcrResult> {
   }
 
   // Set up CCR_CONFIG_DIR for authentication
-  const ccrConfigDir = process.env.CCR_CONFIG_DIR
-    ? expandHomeDir(process.env.CCR_CONFIG_DIR)
+  const ccrConfigDir = process.env[ENV.CCR_HOME]
+    ? expandHomeDir(process.env[ENV.CCR_HOME]!)
     : path.join(homedir(), '.codemachine', 'ccr');
 
   const mergedEnv = {
@@ -130,7 +146,6 @@ export async function runCcr(options: RunCcrOptions): Promise<RunCcrResult> {
     CCR_CONFIG_DIR: ccrConfigDir,
   };
 
-  const plainLogs = (process.env.CODEMACHINE_PLAIN_LOGS || '').toString() === '1';
   // Force pipe mode to ensure text normalization is applied
   const inheritTTY = false;
 
@@ -143,11 +158,6 @@ export async function runCcr(options: RunCcrOptions): Promise<RunCcrResult> {
     // So we keep only the text after the last \r in each line
     result = result.replace(/^.*\r([^\r\n]*)/gm, '$1');
 
-    if (plainLogs) {
-      // Plain mode: strip all ANSI sequences
-      result = result.replace(ANSI_ESCAPE_SEQUENCE, '');
-    }
-
     // Clean up line endings
     result = result
       .replace(/\r\n/g, '\n')  // Convert CRLF to LF
@@ -157,7 +167,7 @@ export async function runCcr(options: RunCcrOptions): Promise<RunCcrResult> {
     return result;
   };
 
-  const { command, args } = buildCcrExecCommand({ workingDir, prompt, model });
+  const { command, args } = buildCcrExecCommand({ workingDir, resumeSessionId, model });
 
   logger.debug(`CCR runner - prompt length: ${prompt.length}, lines: ${prompt.split('\n').length}`);
   logger.debug(`CCR runner - args count: ${args.length}, model: ${model ?? 'default'}`);
@@ -167,6 +177,7 @@ export async function runCcr(options: RunCcrOptions): Promise<RunCcrResult> {
 
   // Track JSON error events (CCR may exit 0 even on errors)
   let capturedError: string | null = null;
+  let sessionIdCaptured = false;
 
   let result;
   try {
@@ -175,7 +186,7 @@ export async function runCcr(options: RunCcrOptions): Promise<RunCcrResult> {
       args,
       cwd: workingDir,
       env: mergedEnv,
-      stdinInput: prompt, // Pass prompt via stdin instead of command-line argument
+      stdinInput: resumeSessionId ? buildResumePrompt(resumePrompt) : prompt,
       onStdout: inheritTTY
         ? undefined
         : (chunk) => {
@@ -192,6 +203,13 @@ export async function runCcr(options: RunCcrOptions): Promise<RunCcrResult> {
               // Check for error events (CCR may exit 0 even on errors like invalid model)
               try {
                 const json = JSON.parse(line);
+
+                // Capture session ID from first event that contains it
+                if (!sessionIdCaptured && json.session_id && onSessionId) {
+                  sessionIdCaptured = true;
+                  onSessionId(json.session_id);
+                }
+
                 // Check for error in result type
                 if (json.type === 'result' && json.is_error && json.result && !capturedError) {
                   capturedError = json.result;

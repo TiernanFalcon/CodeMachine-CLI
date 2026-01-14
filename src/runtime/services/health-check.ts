@@ -163,7 +163,7 @@ async function checkEngines(): Promise<HealthCheckResult> {
 
     for (const engineId of engineIds) {
       try {
-        const engine = await registry.getAsync(engineId);
+        const engine = registry.get(engineId);
         if (engine) {
           const isAuth = await engine.auth.isAuthenticated();
           engineStatus[engineId] = {

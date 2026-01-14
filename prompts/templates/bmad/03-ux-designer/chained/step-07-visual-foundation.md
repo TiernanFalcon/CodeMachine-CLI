@@ -31,6 +31,10 @@ Establish the visual design foundation including color themes, typography, and s
 
 ## VISUAL FOUNDATION SEQUENCE:
 
+### 0. Save Previous Step Content
+
+**First Action:** Append the confirmed content from Step 6 to the UX Design Specification document.
+
 ### 1. Brand Guidelines Assessment
 
 Check for existing brand requirements:
@@ -134,17 +138,10 @@ Prepare the content to append to the document:
 
 ### 7. Step Completion
 
-**Save Content:**
-1. Create HTML color theme visualizer at `.codemachine/artifacts/ux-color-themes.html`
-2. Append content from step 6 to the UX Design Specification document
+**Generate Artifact:**
+Create HTML color theme visualizer at `.codemachine/artifacts/ux-color-themes.html`
 
-**Confirmation:**
-"Content saved to document and color theme visualizer generated.
-
-I've established the visual design foundation for {{project_name}}. This provides the building blocks for consistent, beautiful design.
-
-- If you want to **modify or add details**, just tell me what you'd like to change
-- If you're satisfied, **press Enter in the promptbox to go to the next step**"
+{step_completion}
 
 ## SUCCESS METRICS:
 

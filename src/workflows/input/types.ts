@@ -28,6 +28,9 @@ export interface InputContext {
 
   /** Working directory */
   cwd: string;
+
+  /** Unique agent ID for the current step (for telemetry attribution) */
+  uniqueAgentId?: string;
 }
 
 /**
@@ -52,7 +55,7 @@ export interface InputProvider {
 
   /**
    * Get input for the next step
-   * Called when workflow enters 'waiting' state
+   * Called when workflow enters 'awaiting' state
    */
   getInput(context: InputContext): Promise<InputResult>;
 
@@ -119,4 +122,7 @@ export interface WaitingEventData {
 export interface ReceivedEventData {
   input: string;
   source: 'user' | 'controller' | 'queue';
+  /** Queue info to preserve step indicator while agent runs */
+  promptQueue?: QueuedPrompt[];
+  promptQueueIndex?: number;
 }

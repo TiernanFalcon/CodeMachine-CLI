@@ -18,6 +18,7 @@ import { initTUILogger, closeTUILogger } from "@tui/shared/utils/tui-logger"
 import { getSavedTheme, getTerminalBackgroundColor } from "./utils"
 import { App, currentView } from "./app-shell"
 import { ErrorComponent } from "./components/error-boundary"
+import { appDebug } from "../../shared/logging/logger.js"
 
 export type InitialToast = {
   variant: "success" | "error" | "info" | "warning"
@@ -57,53 +58,79 @@ export async function startTUI(
   knownMode?: "dark" | "light",
   initialToast?: InitialToast
 ): Promise<void> {
+  appDebug('[TUI] startTUI function entered')
+  appDebug('[TUI] skipBackgroundDetection=%s, knownMode=%s', skipBackgroundDetection, knownMode)
+
   // Priority: 1. Saved theme from KV, 2. Known mode, 3. Auto-detect
+  appDebug('[TUI] Getting saved theme')
   const savedTheme = await getSavedTheme()
+  appDebug('[TUI] savedTheme=%s', savedTheme)
+
+  appDebug('[TUI] Resolving mode')
   const mode = savedTheme
     ?? (skipBackgroundDetection && knownMode ? knownMode : null)
     ?? await getTerminalBackgroundColor()
+  appDebug('[TUI] Resolved mode=%s', mode)
 
   // Wait for stdin to settle after background detection
   if (!skipBackgroundDetection) {
+    appDebug('[TUI] Waiting for stdin to settle (100ms)')
     await new Promise((r) => setTimeout(r, 100))
+    appDebug('[TUI] stdin settled')
   }
 
   // Clear terminal before OpenTUI takes over
   if (process.stdout.isTTY) {
+    appDebug('[TUI] Clearing terminal')
     process.stdout.write('\x1b[2J\x1b[H\x1b[?25h')
   }
 
+  appDebug('[TUI] About to create render Promise')
   return new Promise<void>((resolve) => {
+    appDebug('[TUI] Inside Promise, creating VignetteEffect')
     const vignetteEffect = new VignetteEffect(0.35)
+    appDebug('[TUI] VignetteEffect created, calling render()')
 
-    render(
-      () => <Root mode={mode} initialToast={initialToast} onExit={() => {
-        closeTUILogger()
-        if (process.stdout.isTTY) {
-          process.stdout.write('\x1b[2J\x1b[H\x1b[?25h')
+    try {
+      render(
+        () => {
+          appDebug('[TUI] Root component render function called')
+          return <Root mode={mode} initialToast={initialToast} onExit={() => {
+            appDebug('[TUI] onExit called, closing TUI')
+            closeTUILogger()
+            if (process.stdout.isTTY) {
+              process.stdout.write('\x1b[2J\x1b[H\x1b[?25h')
+            }
+            resolve()
+          }} />
+        },
+        {
+          targetFps: 60,
+          gatherStats: false,
+          exitOnCtrlC: false,
+          useKittyKeyboard: { events: true },
+          useMouse: true,
+          postProcessFns: [
+            (buffer) => {
+              if (currentView === "workflow") return buffer
+              return vignetteEffect.apply(buffer)
+            },
+            (buffer) => {
+              if (currentView === "workflow") return buffer
+              return applyScanlines(buffer, 0.92, 2)
+            },
+          ],
         }
-        resolve()
-      }} />,
-      {
-        targetFps: 60,
-        gatherStats: false,
-        exitOnCtrlC: false,
-        useKittyKeyboard: { events: true },
-        useMouse: true,
-        postProcessFns: [
-          (buffer) => {
-            if (currentView === "workflow") return buffer
-            return vignetteEffect.apply(buffer)
-          },
-          (buffer) => {
-            if (currentView === "workflow") return buffer
-            return applyScanlines(buffer, 0.92, 2)
-          },
-        ],
-      }
-    )
+      )
+      appDebug('[TUI] render() call completed')
+    } catch (renderErr) {
+      appDebug('[TUI] render() error: %s', renderErr)
+      throw renderErr
+    }
 
+    appDebug('[TUI] Setting up TUI logger timeout (200ms)')
     setTimeout(() => {
+      appDebug('[TUI] Initializing TUI logger')
       initTUILogger()
     }, 200)
   })

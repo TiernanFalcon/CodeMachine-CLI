@@ -31,6 +31,10 @@ Define component library strategy and design custom components not covered by th
 
 ## COMPONENT STRATEGY SEQUENCE:
 
+### 0. Save Previous Step Content
+
+**First Action:** Append the confirmed content from Step 9 to the UX Design Specification document.
+
 ### 1. Analyze Design System Coverage
 
 Review what components are available vs. needed:
@@ -156,18 +160,7 @@ Prepare the content to append to the document:
 [Implementation roadmap based on conversation]
 ```
 
-### 7. Step Completion
-
-**Save Content:**
-Append the content from step 6 to the UX Design Specification document now.
-
-**Confirmation:**
-"Content saved to document.
-
-I've defined the component strategy for {{project_name}}. This balances using proven design system components with custom components for your unique needs.
-
-- If you want to **modify or add details**, just tell me what you'd like to change
-- If you're satisfied, **press Enter in the promptbox to go to the next step**"
+{step_completion}
 
 ## SUCCESS METRICS:
 

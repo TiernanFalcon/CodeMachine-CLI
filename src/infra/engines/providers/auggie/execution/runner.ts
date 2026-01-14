@@ -2,6 +2,7 @@ import { spawnProcess } from '../../../../process/spawn.js';
 import { buildAuggieRunCommand } from './commands.js';
 import { metadata } from '../metadata.js';
 import { resolveAuggieHome } from '../auth.js';
+import { ENV } from '../config.js';
 import { formatCommand, formatResult, formatStatus, formatMessage } from '../../../../../shared/formatters/outputMarkers.js';
 import { logger } from '../../../../../shared/logging/index.js';
 import { createTelemetryCapture } from '../../../../../shared/telemetry/index.js';
@@ -10,11 +11,14 @@ import type { ParsedTelemetry } from '../../../core/types.js';
 export interface RunAuggieOptions {
   prompt: string;
   workingDir: string;
+  resumeSessionId?: string;
+  resumePrompt?: string;
   model?: string;
   env?: NodeJS.ProcessEnv;
   onData?: (chunk: string) => void;
   onErrorData?: (chunk: string) => void;
   onTelemetry?: (telemetry: ParsedTelemetry) => void;
+  onSessionId?: (sessionId: string) => void;
   abortSignal?: AbortSignal;
   timeout?: number; // Timeout in milliseconds (default: 1800000ms = 30 minutes)
 }
@@ -24,8 +28,6 @@ export interface RunAuggieResult {
   stderr: string;
 }
 
-const ANSI_ESCAPE_SEQUENCE = new RegExp(String.raw`\u001B\[[0-9;?]*[ -/]*[@-~]`, 'g');
-
 function shouldApplyDefault(key: string, overrides?: NodeJS.ProcessEnv): boolean {
   return overrides?.[key] === undefined && process.env[key] === undefined;
 }
@@ -34,7 +36,7 @@ function resolveRunnerEnv(env?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const runnerEnv: NodeJS.ProcessEnv = { ...process.env, ...(env ?? {}) };
 
   // Set Auggie home directory
-  const auggieHome = resolveAuggieHome(runnerEnv.AUGGIE_HOME);
+  const auggieHome = resolveAuggieHome(runnerEnv[ENV.AUGGIE_HOME]);
 
   if (shouldApplyDefault('AUGMENT_HOME', env)) {
     runnerEnv.AUGMENT_HOME = auggieHome;
@@ -43,15 +45,24 @@ function resolveRunnerEnv(env?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return runnerEnv;
 }
 
-function cleanAnsi(text: string, plainLogs: boolean): string {
-  if (!plainLogs) return text;
-  return text.replace(ANSI_ESCAPE_SEQUENCE, '');
+/**
+ * Build the final resume prompt combining steering instruction with user message
+ */
+function buildResumePrompt(userPrompt?: string): string {
+  const defaultPrompt = 'Continue from where you left off.';
+
+  if (!userPrompt) {
+    return defaultPrompt;
+  }
+
+  // Combine steering instruction with user's message
+  return `[USER STEERING] The user paused this session to give you new direction. Continue from where you left off, but prioritize the user's request: "${userPrompt}"`;
 }
 
 // Note: Auggie returns a single result object, not streaming events like OpenCode
 // Therefore, we don't need complex formatting helpers like formatToolUse or formatStepEvent
 
-function formatErrorEvent(error: unknown, plainLogs: boolean): string {
+function formatErrorEvent(error: unknown): string {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const errorObj = (typeof error === 'object' && error !== null ? error : {}) as Record<string, any>;
   const dataMessage =
@@ -63,19 +74,21 @@ function formatErrorEvent(error: unknown, plainLogs: boolean): string {
           ? errorObj.name
           : 'Auggie reported an unknown error';
 
-  const cleaned = cleanAnsi(dataMessage, plainLogs);
-  return `${formatCommand('Auggie Error', 'error')}\n${formatResult(cleaned, true)}`;
+  return `${formatCommand('Auggie Error', 'error')}\n${formatResult(dataMessage, true)}`;
 }
 
 export async function runAuggie(options: RunAuggieOptions): Promise<RunAuggieResult> {
   const {
     prompt,
     workingDir,
+    resumeSessionId,
+    resumePrompt,
     model,
     env,
     onData,
     onErrorData,
     onTelemetry,
+    onSessionId,
     abortSignal,
     timeout = 1800000,
   } = options;
@@ -89,15 +102,16 @@ export async function runAuggie(options: RunAuggieOptions): Promise<RunAuggieRes
   }
 
   const runnerEnv = resolveRunnerEnv(env);
-  const plainLogs =
-    (env?.CODEMACHINE_PLAIN_LOGS ?? process.env.CODEMACHINE_PLAIN_LOGS ?? '').toString() === '1';
-  const { command, args } = buildAuggieRunCommand({ model });
+  const { command, args } = buildAuggieRunCommand({ model, resumeSessionId });
 
   // Add working directory to args (Auggie uses --workspace-root, not --cwd)
   args.push('--workspace-root', workingDir);
 
+  // When resuming, use the resume prompt instead of the original prompt
+  const effectivePrompt = resumeSessionId ? buildResumePrompt(resumePrompt) : prompt;
+
   // Add prompt as positional argument (Auggie accepts it as the last argument)
-  args.push(prompt);
+  args.push(effectivePrompt);
 
   logger.debug(
     `Auggie runner - prompt length: ${prompt.length}, lines: ${prompt.split('\n').length}, model: ${
@@ -108,6 +122,7 @@ export async function runAuggie(options: RunAuggieOptions): Promise<RunAuggieRes
   const telemetryCapture = createTelemetryCapture('auggie', model, prompt, workingDir);
   let jsonBuffer = '';
   let isFirstStep = true;
+  let sessionIdCaptured = false;
 
   const processLine = (line: string): void => {
     if (!line.trim()) {
@@ -131,6 +146,12 @@ export async function runAuggie(options: RunAuggieOptions): Promise<RunAuggieRes
     // Auggie returns a single JSON object with type "result"
     // Format: {"type":"result","result":"...","is_error":false,"subtype":"success","session_id":"...","num_turns":0}
     if (parsedObj.type === 'result') {
+      // Capture session ID from result event
+      if (!sessionIdCaptured && parsedObj.session_id && onSessionId) {
+        sessionIdCaptured = true;
+        onSessionId(parsedObj.session_id);
+      }
+
       const resultText = typeof parsedObj.result === 'string' ? parsedObj.result : '';
       const isError = parsedObj.is_error === true;
 
@@ -141,8 +162,7 @@ export async function runAuggie(options: RunAuggieOptions): Promise<RunAuggieRes
       }
 
       if (resultText) {
-        const cleaned = cleanAnsi(resultText, plainLogs);
-        const formatted = isError ? formatErrorEvent(cleaned, plainLogs) : formatMessage(cleaned);
+        const formatted = isError ? formatErrorEvent(resultText) : formatMessage(resultText);
         if (formatted) {
           const suffix = formatted.endsWith('\n') ? '' : '\n';
           onData?.(formatted + suffix);
@@ -182,11 +202,6 @@ export async function runAuggie(options: RunAuggieOptions): Promise<RunAuggieRes
     // Handle carriage returns that cause line overwrites
     result = result.replace(/^.*\r([^\r\n]*)/gm, '$1');
 
-    // Strip ANSI sequences in plain mode
-    if (plainLogs) {
-      result = result.replace(ANSI_ESCAPE_SEQUENCE, '');
-    }
-
     // Collapse excessive newlines
     result = result.replace(/\n{3,}/g, '\n\n');
 
@@ -214,8 +229,7 @@ export async function runAuggie(options: RunAuggieOptions): Promise<RunAuggieRes
       },
       onStderr: (chunk) => {
         const normalized = normalizeChunk(chunk);
-        const cleaned = cleanAnsi(normalized, plainLogs);
-        onErrorData?.(cleaned);
+        onErrorData?.(normalized);
       },
       signal: abortSignal,
       timeout,

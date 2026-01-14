@@ -5,33 +5,38 @@
 import type {
   WorkflowState,
   AgentStatus,
+  AgentTelemetry,
   LoopState,
   ChainedState,
   InputState,
-  RateLimitState,
   SubAgentState,
   TriggeredAgentState,
   WorkflowStatus,
+  WorkflowPhase,
+  ControllerState,
 } from "../../state/types"
 
 export type Listener = () => void
+
+export type AutonomousMode = "true" | "false" | "never" | "always"
 
 export type UIActions = {
   getState(): WorkflowState
   subscribe(fn: Listener): () => void
   addAgent(agent: WorkflowState["agents"][number]): void
   updateAgentStatus(agentId: string, status: AgentStatus): void
+  updateAgentStartTime(agentId: string, startTime: number): void
+  updateAgentDuration(agentId: string, duration: number): void
   updateAgentEngine(agentId: string, engine: string): void
   updateAgentModel(agentId: string, model: string): void
   updateAgentTelemetry(agentId: string, telemetry: Partial<WorkflowState["agents"][number]["telemetry"]>): void
-  updateAgentGoal(agentId: string, goal: string): void
-  updateAgentCurrentFile(agentId: string, currentFile: string): void
-  updateAgentCurrentAction(agentId: string, currentAction: string): void
   setLoopState(loopState: LoopState | null): void
   clearLoopRound(agentId: string): void
   addSubAgent(parentId: string, subAgent: SubAgentState): void
   batchAddSubAgents(parentId: string, subAgents: SubAgentState[]): void
   updateSubAgentStatus(subAgentId: string, status: AgentStatus): void
+  updateSubAgentStartTime(subAgentId: string, startTime: number): void
+  updateSubAgentDuration(subAgentId: string, duration: number): void
   clearSubAgents(parentId: string): void
   navigateDown(visibleItemCount?: number): void
   navigateUp(visibleItemCount?: number): void
@@ -40,20 +45,25 @@ export type UIActions = {
   toggleTimeline(): void
   setVisibleItemCount(count: number): void
   setScrollOffset(offset: number, visibleItemCount?: number): void
+  setWorkflowName(name: string): void
   setWorkflowStatus(status: WorkflowStatus): void
   setCheckpointState(checkpoint: { active: boolean; reason?: string } | null): void
   setInputState(inputState: InputState | null): void
-  setRateLimitState(rateLimitState: RateLimitState | null): void
   /** @deprecated Use setInputState instead */
   setChainedState(chainedState: ChainedState | null): void
   registerMonitoringId(uiAgentId: string, monitoringId: number): void
   addTriggeredAgent(sourceAgentId: string, triggeredAgent: TriggeredAgentState): void
   resetAgentForLoop(agentId: string, cycleNumber?: number): void
-  addUIElement(element: { id: string; text: string; stepIndex: number }): void
+  addSeparator(separator: { id: string; text: string; stepIndex: number }): void
   logMessage(agentId: string, message: string): void
-  setAutonomousMode(enabled: boolean): void
-  setEnginePreset(preset: string | null): void
-  setFallbackEnabled(enabled: boolean): void
+  setAutonomousMode(enabled: AutonomousMode): void
+  setControllerState(controllerState: ControllerState | null): void
+  updateControllerTelemetry(telemetry: Partial<AgentTelemetry>): void
+  updateControllerStatus(status: AgentStatus): void
+  updateControllerMonitoring(monitoringId: number): void
+  setWorkflowPhase(phase: WorkflowPhase): void
+  /** Reset state for a new workflow */
+  reset(workflowName: string): void
 }
 
-export type { WorkflowState, AgentStatus, LoopState, ChainedState, InputState, RateLimitState, SubAgentState, TriggeredAgentState, WorkflowStatus }
+export type { WorkflowState, AgentStatus, AgentTelemetry, LoopState, ChainedState, InputState, SubAgentState, TriggeredAgentState, WorkflowStatus, WorkflowPhase, ControllerState }

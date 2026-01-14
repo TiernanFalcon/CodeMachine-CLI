@@ -7,7 +7,7 @@ export const metadata: EngineMetadata = {
   cliCommand: 'opencode',
   cliBinary: 'opencode',
   installCommand: 'npm i -g opencode-ai@latest',
-  defaultModel: 'opencode/big-pickle',
+  defaultModel: 'opencode/glm-4.7-free',
   order: 1,
   supportsResume: true,
 };

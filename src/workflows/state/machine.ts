@@ -3,6 +3,10 @@
  *
  * Finite state machine implementation for workflow execution.
  * Ensures valid state transitions and prevents race conditions.
+ *
+ * Note: Queue state (promptQueue, promptQueueIndex) is managed by StepIndexManager.
+ * The context fields are kept for backward compatibility during transition.
+ * StepSession syncs between indexManager and machine context.
  */
 
 import { debug } from '../../shared/logging/logger.js';
@@ -26,41 +30,9 @@ export function createMachine(config: MachineConfig): StateMachine {
 
   const FINAL_STATES: WorkflowState[] = ['completed', 'stopped', 'error'];
 
-  // Track if we're currently notifying to prevent race conditions
-  let isNotifying = false;
-  // Queue events received during notification
-  const pendingEvents: WorkflowEvent[] = [];
-
   function notify() {
-    // Guard against re-entrant notifications
-    if (isNotifying) {
-      return;
-    }
-
-    isNotifying = true;
-    try {
-      // Create a snapshot of listeners to prevent modification during iteration
-      const listenerSnapshot = [...listeners];
-      const stateSnapshot = currentState;
-      const contextSnapshot = { ...context };
-
-      for (const listener of listenerSnapshot) {
-        try {
-          listener(stateSnapshot, contextSnapshot);
-        } catch (listenerError) {
-          debug('[FSM] Error in state listener: %o', listenerError);
-        }
-      }
-    } finally {
-      isNotifying = false;
-    }
-
-    // Process any events that were queued during notification
-    while (pendingEvents.length > 0) {
-      const event = pendingEvents.shift();
-      if (event) {
-        send(event);
-      }
+    for (const listener of listeners) {
+      listener(currentState, context);
     }
   }
 
@@ -85,13 +57,6 @@ export function createMachine(config: MachineConfig): StateMachine {
   }
 
   function send(event: WorkflowEvent): void {
-    // Queue events if we're currently notifying to prevent race conditions
-    if (isNotifying) {
-      debug('[FSM] Queueing event %s during notification', event.type);
-      pendingEvents.push(event);
-      return;
-    }
-
     if (FINAL_STATES.includes(currentState)) {
       debug('[FSM] Ignoring event %s - machine in final state %s', event.type, currentState);
       return;
@@ -108,38 +73,25 @@ export function createMachine(config: MachineConfig): StateMachine {
 
     debug('[FSM] Transition: %s -> %s (event: %s)', prevState, nextState, event.type);
 
+    // Exit current state
     const prevStateDef = config.states[prevState];
-    const nextStateDef = config.states[nextState];
-
-    try {
-      // Exit current state
-      if (prevStateDef.onExit) {
-        prevStateDef.onExit(context);
-      }
-
-      // Execute transition action
-      if (transition.action) {
-        transition.action(context, event);
-      }
-
-      // Enter new state (commit state change)
-      currentState = nextState;
-
-      // Run onEnter (state already committed, so errors are logged but don't prevent transition)
-      if (nextStateDef.onEnter) {
-        try {
-          nextStateDef.onEnter(context);
-        } catch (enterError) {
-          debug('[FSM] Error in onEnter for state %s: %o', nextState, enterError);
-        }
-      }
-
-      notify();
-    } catch (transitionError) {
-      // Transition failed before state change - log and keep current state
-      debug('[FSM] Transition failed from %s to %s: %o', prevState, nextState, transitionError);
-      // State remains unchanged (prevState)
+    if (prevStateDef.onExit) {
+      prevStateDef.onExit(context);
     }
+
+    // Execute transition action
+    if (transition.action) {
+      transition.action(context, event);
+    }
+
+    // Enter new state
+    currentState = nextState;
+    const nextStateDef = config.states[nextState];
+    if (nextStateDef.onEnter) {
+      nextStateDef.onEnter(context);
+    }
+
+    notify();
   }
 
   function subscribe(listener: StateListener): () => void {
@@ -172,10 +124,10 @@ export function createWorkflowMachine(initialContext: Partial<WorkflowContext> =
     steps: [],
     currentOutput: null,
     autoMode: false,
-    promptQueue: [],
-    promptQueueIndex: 0,
+    paused: false,
     cwd: process.cwd(),
     cmRoot: '',
+    continuationPromptSent: false,
     ...initialContext,
   };
 
@@ -200,16 +152,35 @@ export function createWorkflowMachine(initialContext: Partial<WorkflowContext> =
           debug('[FSM] Entering running state, step %d/%d', ctx.currentStepIndex + 1, ctx.totalSteps);
         },
         on: {
-          STEP_COMPLETE: {
-            target: 'waiting',
-            action: (ctx, event) => {
-              if (event.type === 'STEP_COMPLETE') {
-                ctx.currentOutput = event.output;
-                ctx.currentMonitoringId = event.output.monitoringId;
-                debug('[FSM] Step completed, output length: %d', event.output.output.length);
-              }
+          STEP_COMPLETE: [
+            // Controller mode -> delegated state
+            {
+              target: 'delegated',
+              guard: (ctx) => {
+                const step = ctx.steps[ctx.currentStepIndex];
+                return ctx.autoMode && !ctx.paused && step?.interactive !== false;
+              },
+              action: (ctx, event) => {
+                if (event.type === 'STEP_COMPLETE') {
+                  ctx.currentOutput = event.output;
+                  ctx.currentMonitoringId = event.output.monitoringId;
+                  ctx.continuationPromptSent = true; // Fresh completion - no continuation prompt needed
+                  debug('[FSM] Step completed (delegated), output length: %d', event.output.output.length);
+                }
+              },
             },
-          },
+            // Manual mode -> awaiting state
+            {
+              target: 'awaiting',
+              action: (ctx, event) => {
+                if (event.type === 'STEP_COMPLETE') {
+                  ctx.currentOutput = event.output;
+                  ctx.currentMonitoringId = event.output.monitoringId;
+                  debug('[FSM] Step completed (awaiting), output length: %d', event.output.output.length);
+                }
+              },
+            },
+          ],
           STEP_ERROR: {
             target: 'error',
             action: (ctx, event) => {
@@ -219,25 +190,15 @@ export function createWorkflowMachine(initialContext: Partial<WorkflowContext> =
               }
             },
           },
-          RATE_LIMIT_WAIT: {
-            target: 'waiting_for_rate_limit',
-            action: (ctx, event) => {
-              if (event.type === 'RATE_LIMIT_WAIT') {
-                ctx.rateLimitResetsAt = event.resetsAt;
-                ctx.rateLimitEngineId = event.engineId;
-                debug('[FSM] Rate limit wait - engine %s resets at %s', event.engineId, event.resetsAt.toISOString());
-              }
-            },
-          },
           SKIP: [
             // Skip while running - advance to next step
+            // Note: Queue reset is handled by StepIndexManager
             {
               target: 'running',
               guard: (ctx) => ctx.currentStepIndex < ctx.totalSteps - 1,
               action: (ctx) => {
                 ctx.currentStepIndex += 1;
-                ctx.promptQueue = [];
-                ctx.promptQueueIndex = 0;
+                ctx.continuationPromptSent = false;
                 debug('[FSM] Skipped during run, advancing to step %d', ctx.currentStepIndex + 1);
               },
             },
@@ -248,10 +209,11 @@ export function createWorkflowMachine(initialContext: Partial<WorkflowContext> =
             },
           ],
           PAUSE: {
-            target: 'waiting',
+            target: 'awaiting',
             action: (ctx) => {
-              // Pause forces manual mode
+              // Pause forces manual mode and sets paused flag
               ctx.autoMode = false;
+              ctx.paused = true;
               debug('[FSM] Paused - auto mode disabled');
             },
           },
@@ -261,33 +223,24 @@ export function createWorkflowMachine(initialContext: Partial<WorkflowContext> =
         },
       },
 
-      waiting_for_rate_limit: {
+      awaiting: {
         onEnter: (ctx) => {
-          debug('[FSM] Entering rate limit wait state, resets at %s', ctx.rateLimitResetsAt?.toISOString());
-        },
-        onExit: (ctx) => {
-          // Clear rate limit info when exiting
-          ctx.rateLimitResetsAt = undefined;
-          ctx.rateLimitEngineId = undefined;
+          debug('[FSM] Entering awaiting state, autoMode: %s', ctx.autoMode);
         },
         on: {
-          RATE_LIMIT_CLEAR: {
-            target: 'running',
-            action: () => {
-              debug('[FSM] Rate limit cleared, resuming execution');
+          DELEGATE: {
+            target: 'delegated',
+            action: (ctx) => {
+              ctx.autoMode = true;
+              debug('[FSM] Mode switched to autonomous, transitioning to delegated');
             },
           },
-          STOP: {
-            target: 'stopped',
+          RESUME: {
+            target: 'running',
+            action: () => {
+              debug('[FSM] Resuming execution from awaiting state');
+            },
           },
-        },
-      },
-
-      waiting: {
-        onEnter: (ctx) => {
-          debug('[FSM] Entering waiting state, autoMode: %s', ctx.autoMode);
-        },
-        on: {
           INPUT_RECEIVED: [
             // If more steps, go to running
             {
@@ -296,6 +249,7 @@ export function createWorkflowMachine(initialContext: Partial<WorkflowContext> =
               action: (ctx, event) => {
                 if (event.type === 'INPUT_RECEIVED') {
                   ctx.currentStepIndex += 1;
+                  ctx.continuationPromptSent = false;
                   debug('[FSM] Input received, advancing to step %d', ctx.currentStepIndex + 1);
                 }
               },
@@ -311,12 +265,13 @@ export function createWorkflowMachine(initialContext: Partial<WorkflowContext> =
           ],
           SKIP: [
             // If more steps, skip to next
+            // Note: Queue reset is handled by StepIndexManager
             {
               target: 'running',
               guard: (ctx) => ctx.currentStepIndex < ctx.totalSteps - 1,
               action: (ctx) => {
                 ctx.currentStepIndex += 1;
-                ctx.promptQueueIndex = 0; // Reset queue on skip
+                ctx.continuationPromptSent = false;
                 debug('[FSM] Skipped, advancing to step %d', ctx.currentStepIndex + 1);
               },
             },
@@ -326,6 +281,69 @@ export function createWorkflowMachine(initialContext: Partial<WorkflowContext> =
               guard: (ctx) => ctx.currentStepIndex >= ctx.totalSteps - 1,
             },
           ],
+          STOP: {
+            target: 'stopped',
+          },
+        },
+      },
+
+      delegated: {
+        onEnter: () => {
+          debug('[FSM] Entering delegated state (controller agent)');
+        },
+        on: {
+          AWAIT: {
+            target: 'awaiting',
+            action: (ctx) => {
+              ctx.autoMode = false;
+              ctx.continuationPromptSent = false; // Reset so next auto mode entry sends prompt
+              debug('[FSM] Mode switched to manual, transitioning to awaiting');
+            },
+          },
+          INPUT_RECEIVED: [
+            {
+              target: 'running',
+              guard: (ctx) => ctx.currentStepIndex < ctx.totalSteps - 1,
+              action: (ctx, event) => {
+                if (event.type === 'INPUT_RECEIVED') {
+                  ctx.currentStepIndex += 1;
+                  ctx.continuationPromptSent = false;
+                  debug('[FSM] Controller input received, advancing to step %d', ctx.currentStepIndex + 1);
+                }
+              },
+            },
+            {
+              target: 'completed',
+              guard: (ctx) => ctx.currentStepIndex >= ctx.totalSteps - 1,
+              action: () => {
+                debug('[FSM] Last step completed (delegated)');
+              },
+            },
+          ],
+          SKIP: [
+            {
+              target: 'running',
+              guard: (ctx) => ctx.currentStepIndex < ctx.totalSteps - 1,
+              action: (ctx) => {
+                ctx.currentStepIndex += 1;
+                ctx.continuationPromptSent = false;
+                debug('[FSM] Controller skipped, advancing to step %d', ctx.currentStepIndex + 1);
+              },
+            },
+            {
+              target: 'completed',
+              guard: (ctx) => ctx.currentStepIndex >= ctx.totalSteps - 1,
+            },
+          ],
+          PAUSE: {
+            target: 'awaiting',
+            action: (ctx) => {
+              ctx.autoMode = false;
+              ctx.paused = true;
+              ctx.continuationPromptSent = false; // Reset so next auto mode entry sends prompt
+              debug('[FSM] Controller paused - switching to manual mode');
+            },
+          },
           STOP: {
             target: 'stopped',
           },

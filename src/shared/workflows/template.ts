@@ -2,6 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import * as path from 'node:path';
 import { resolvePackageRoot } from '../runtime/root.js';
+import { debug } from '../logging/logger.js';
 
 const TEMPLATE_TRACKING_FILE = 'template.json';
 
@@ -47,7 +48,7 @@ interface TemplateTracking {
   selectedTrack?: string; // Selected workflow track (e.g., 'bmad', 'quick', 'enterprise')
   selectedConditions?: string[]; // Selected conditions (e.g., ['has_ui', 'has_api'])
   projectName?: string; // User-provided project name for placeholder replacement
-  autonomousMode?: boolean; // Whether autonomous mode is enabled
+  autonomousMode?: string; // 'true' | 'false' | 'never' | 'always'
   controllerConfig?: ControllerConfig; // Controller agent config for autonomous mode
 }
 
@@ -56,16 +57,20 @@ interface TemplateTracking {
  */
 export async function getActiveTemplate(cmRoot: string): Promise<string | null> {
   const trackingPath = path.join(cmRoot, TEMPLATE_TRACKING_FILE);
+  debug('[Template] getActiveTemplate: trackingPath=%s', trackingPath);
 
   if (!existsSync(trackingPath)) {
+    debug('[Template] getActiveTemplate: file does not exist, returning null');
     return null;
   }
 
   try {
     const content = await readFile(trackingPath, 'utf8');
     const data = JSON.parse(content) as TemplateTracking;
+    debug('[Template] getActiveTemplate: activeTemplate=%s', data.activeTemplate);
     return data.activeTemplate ?? null;
   } catch (error) {
+    debug('[Template] getActiveTemplate: parse error=%s', error instanceof Error ? error.message : String(error));
     console.warn(`Failed to read active template from tracking file: ${error instanceof Error ? error.message : String(error)}`);
     return null;
   }
@@ -75,7 +80,7 @@ export async function getActiveTemplate(cmRoot: string): Promise<string | null> 
  * Sets the active template name in the tracking file.
  * Preserves existing step data if the template is the same.
  */
-export async function setActiveTemplate(cmRoot: string, templateName: string): Promise<void> {
+export async function setActiveTemplate(cmRoot: string, templateName: string, autonomousModeOverride?: string): Promise<void> {
   const trackingPath = path.join(cmRoot, TEMPLATE_TRACKING_FILE);
 
   let data: TemplateTracking;
@@ -99,6 +104,7 @@ export async function setActiveTemplate(cmRoot: string, templateName: string): P
           completedSteps: {},
           notCompletedSteps: [],
           resumeFromLastStep: true,
+          autonomousMode: autonomousModeOverride ?? 'true', // Use template override or default to 'true'
           // Preserve user preferences
           selectedTrack: existing.selectedTrack,
           selectedConditions: existing.selectedConditions,
@@ -113,6 +119,7 @@ export async function setActiveTemplate(cmRoot: string, templateName: string): P
         completedSteps: {},
         notCompletedSteps: [],
         resumeFromLastStep: true,
+        autonomousMode: autonomousModeOverride ?? 'true',
       };
     }
   } else {
@@ -123,6 +130,7 @@ export async function setActiveTemplate(cmRoot: string, templateName: string): P
       completedSteps: {},
       notCompletedSteps: [],
       resumeFromLastStep: true,
+      autonomousMode: autonomousModeOverride ?? 'true',
     };
   }
 
@@ -156,7 +164,7 @@ export async function getTemplatePathFromTracking(cmRoot: string): Promise<strin
 
   if (!activeTemplate) {
     // No template tracked, return default
-    return path.join(templatesDir, 'default.workflow.js');
+    return path.join(templatesDir, 'bmad.workflow.js');
   }
 
   // Return full path from template name
@@ -168,16 +176,20 @@ export async function getTemplatePathFromTracking(cmRoot: string): Promise<strin
  */
 export async function getSelectedTrack(cmRoot: string): Promise<string | null> {
   const trackingPath = path.join(cmRoot, TEMPLATE_TRACKING_FILE);
+  debug('[Template] getSelectedTrack: trackingPath=%s', trackingPath);
 
   if (!existsSync(trackingPath)) {
+    debug('[Template] getSelectedTrack: file does not exist, returning null');
     return null;
   }
 
   try {
     const content = await readFile(trackingPath, 'utf8');
     const data = JSON.parse(content) as TemplateTracking;
+    debug('[Template] getSelectedTrack: selectedTrack=%s', data.selectedTrack);
     return data.selectedTrack ?? null;
   } catch (error) {
+    debug('[Template] getSelectedTrack: parse error=%s', error instanceof Error ? error.message : String(error));
     console.warn(`Failed to read selected track: ${error instanceof Error ? error.message : String(error)}`);
     return null;
   }
@@ -225,16 +237,20 @@ export async function setSelectedTrack(cmRoot: string, track: string): Promise<v
  */
 export async function getSelectedConditions(cmRoot: string): Promise<string[]> {
   const trackingPath = path.join(cmRoot, TEMPLATE_TRACKING_FILE);
+  debug('[Template] getSelectedConditions: trackingPath=%s', trackingPath);
 
   if (!existsSync(trackingPath)) {
+    debug('[Template] getSelectedConditions: file does not exist, returning []');
     return [];
   }
 
   try {
     const content = await readFile(trackingPath, 'utf8');
     const data = JSON.parse(content) as TemplateTracking;
+    debug('[Template] getSelectedConditions: selectedConditions=%O', data.selectedConditions);
     return data.selectedConditions ?? [];
   } catch (error) {
+    debug('[Template] getSelectedConditions: parse error=%s', error instanceof Error ? error.message : String(error));
     console.warn(`Failed to read selected conditions: ${error instanceof Error ? error.message : String(error)}`);
     return [];
   }
@@ -302,16 +318,20 @@ export async function setSelectedConditions(cmRoot: string, conditions: string[]
  */
 export async function getProjectName(cmRoot: string): Promise<string | null> {
   const trackingPath = path.join(cmRoot, TEMPLATE_TRACKING_FILE);
+  debug('[Template] getProjectName: trackingPath=%s', trackingPath);
 
   if (!existsSync(trackingPath)) {
+    debug('[Template] getProjectName: file does not exist, returning null');
     return null;
   }
 
   try {
     const content = await readFile(trackingPath, 'utf8');
     const data = JSON.parse(content) as TemplateTracking;
+    debug('[Template] getProjectName: projectName=%s', data.projectName);
     return data.projectName ?? null;
   } catch (error) {
+    debug('[Template] getProjectName: parse error=%s', error instanceof Error ? error.message : String(error));
     console.warn(`Failed to read project name: ${error instanceof Error ? error.message : String(error)}`);
     return null;
   }

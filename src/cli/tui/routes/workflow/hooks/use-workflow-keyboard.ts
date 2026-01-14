@@ -7,7 +7,6 @@
 
 import { useKeyboard } from "@opentui/solid"
 import { debug } from "../../../../../shared/logging/logger.js"
-import { getControlBus } from "../../../../../workflows/control/index.js"
 import type { WorkflowState } from "../context/ui-state"
 
 export interface UseWorkflowKeyboardOptions {
@@ -54,8 +53,12 @@ export interface UseWorkflowKeyboardOptions {
   isAutonomousMode?: () => boolean
   /** Toggle autonomous mode on/off */
   toggleAutonomousMode?: () => void
-  /** Open settings modal */
-  openSettings?: () => void
+  /** Show controller continue confirmation modal */
+  showControllerContinue?: () => void
+  /** Return to controller conversation (pause workflow and re-enter controller) */
+  returnToController?: () => void
+  /** Check if workflow has a controller */
+  hasController?: () => boolean
 }
 
 /**
@@ -90,8 +93,8 @@ export function useWorkflowKeyboard(options: UseWorkflowKeyboardOptions) {
         return
       }
 
-      // Normal case: skip current agent via control bus
-      getControlBus().emit("skip")
+      // Normal case: skip current agent
+      ; (process as NodeJS.EventEmitter).emit("workflow:skip")
       return
     }
 
@@ -99,13 +102,6 @@ export function useWorkflowKeyboard(options: UseWorkflowKeyboardOptions) {
     if (evt.name === "tab") {
       evt.preventDefault()
       options.actions.toggleTimeline()
-      return
-    }
-
-    // Ctrl+O - open settings modal (GLOBAL)
-    if (evt.ctrl && evt.name === "o") {
-      evt.preventDefault()
-      options.openSettings?.()
       return
     }
 
@@ -144,6 +140,19 @@ export function useWorkflowKeyboard(options: UseWorkflowKeyboardOptions) {
       return
     }
 
+    // C key - return to controller conversation (only during executing phase)
+    if (evt.name === "c") {
+      const s = options.getState()
+      const hasController = options.hasController?.()
+      debug('C key pressed - phase=%s, hasController=%s', s.phase, hasController)
+      if (s.phase === 'executing' && hasController) {
+        evt.preventDefault()
+        debug('C pressed - returning to controller')
+        options.returnToController?.()
+        return
+      }
+    }
+
     // Arrow up - navigate to previous item
     if (evt.name === "up") {
       evt.preventDefault()
@@ -167,10 +176,18 @@ export function useWorkflowKeyboard(options: UseWorkflowKeyboardOptions) {
       }
     }
 
-    // Enter key has dual functionality
+    // Enter key has context-dependent functionality
     if (evt.name === "return") {
       evt.preventDefault()
       const s = options.getState()
+
+      // In onboarding phase, Enter shows confirmation modal before continuing to workflow
+      if (s.phase === 'onboarding') {
+        debug('Enter pressed in onboarding phase - showing controller continue modal')
+        options.showControllerContinue?.()
+        return
+      }
+
       if (s.selectedItemType === "summary" && s.selectedAgentId) {
         options.actions.toggleExpand(s.selectedAgentId)
       } else {

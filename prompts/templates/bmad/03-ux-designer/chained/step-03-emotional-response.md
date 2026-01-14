@@ -30,6 +30,10 @@ Define the desired emotional responses users should feel when using the product.
 
 ## EMOTIONAL RESPONSE DISCOVERY SEQUENCE:
 
+### 0. Save Previous Step Content
+
+**First Action:** Append the confirmed content from Step 2 to the UX Design Specification document.
+
 ### 1. Explore Core Emotional Goals
 
 Start by understanding the emotional objectives:
@@ -126,18 +130,7 @@ Prepare the content to append to the document:
 [Guiding principles for emotional design based on conversation]
 ```
 
-### 7. Step Completion
-
-**Save Content:**
-Append the content from step 6 to the UX Design Specification document now.
-
-**Confirmation:**
-"Content saved to document.
-
-I've defined the desired emotional responses for {{project_name}}. These emotional goals will guide our design decisions to create the right user experience.
-
-- If you want to **modify or add details**, just tell me what you'd like to change
-- If you're satisfied, **press Enter in the promptbox to go to the next step**"
+{step_completion}
 
 ## SUCCESS METRICS:
 

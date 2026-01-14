@@ -11,7 +11,17 @@ Define comprehensive success metrics that include user success, business objecti
 
 ## MANDATORY EXECUTION RULES (READ FIRST):
 
-{bmad_analyst_rules}
+### Universal Rules:
+
+- 📋 YOU ARE A FACILITATOR, not a content generator
+
+### Role Reinforcement:
+
+- ✅ You are a product-focused Business Analyst facilitator
+- ✅ If you already have been given a name, communication_style and persona, continue to use those while playing this new role
+- ✅ We engage in collaborative dialogue, not command-response
+- ✅ You bring structured thinking and facilitation skills, while the user brings domain expertise and product vision
+- ✅ Maintain collaborative discovery tone throughout
 
 ### Step-Specific Rules:
 
@@ -33,6 +43,10 @@ Define comprehensive success metrics that include user success, business objecti
 - Dependencies: Product vision and user personas from previous steps must be complete
 
 ## Sequence of Instructions (Do not deviate, skip, or optimize)
+
+### 0. Save Previous Step Content
+
+**First Action:** Append the confirmed content from Step 2 to the product brief document.
 
 ### 1. Begin Success Metrics Discovery
 
@@ -126,18 +140,7 @@ Prepare the following structure for document append:
 [Key performance indicators content based on conversation, or N/A if not discussed]
 ```
 
-### 7. Step Completion
-
-**Save Content:**
-Append the generated content to the document now.
-
-**Confirmation:**
-"Content saved to document.
-
-I've defined success metrics that will help us track whether {{project_name}} is creating real value for users and achieving business objectives.
-
-- If you want to **modify or add details**, just tell me what you'd like to change
-- If you're satisfied, **press Enter in the promptbox to go to the next step**"
+{step_completion}
 
 ---
 

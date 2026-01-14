@@ -1,8 +1,5 @@
-import * as path from 'node:path';
-
 import { runCursor } from './runner.js';
-import { MemoryAdapter } from '../../../../fs/memory-adapter.js';
-import { MemoryStore } from '../../../../../agents/index.js';
+import { renderToChalk } from '../../../../../shared/formatters/outputMarkers.js';
 
 export interface RunAgentOptions {
   abortSignal?: AbortSignal;
@@ -12,28 +9,19 @@ export interface RunAgentOptions {
   model?: string; // Model to use (e.g., 'auto', 'gpt-5', 'sonnet-4.5')
 }
 
-export function shouldSkipCursor(): boolean {
-  return process.env.CODEMACHINE_SKIP_CURSOR === '1';
-}
-
 export async function runCursorPrompt(options: {
   agentId: string;
   prompt: string;
   cwd: string;
   model?: string;
 }): Promise<void> {
-  if (shouldSkipCursor()) {
-    console.log(`[dry-run] ${options.agentId}: ${options.prompt.slice(0, 80)}...`);
-    return;
-  }
-
   await runCursor({
     prompt: options.prompt,
     workingDir: options.cwd,
     model: options.model,
     onData: (chunk) => {
       try {
-        process.stdout.write(chunk);
+        process.stdout.write(renderToChalk(chunk));
       } catch {
         // Ignore stdout write errors
       }
@@ -57,7 +45,7 @@ export async function runAgent(
   const logStdout: (chunk: string) => void = options.logger
     ?? ((chunk: string) => {
       try {
-        process.stdout.write(chunk);
+        process.stdout.write(renderToChalk(chunk));
       } catch {
         // Ignore stdout write errors
       }
@@ -70,11 +58,6 @@ export async function runAgent(
         // Ignore stderr write errors
       }
     });
-
-  if (shouldSkipCursor()) {
-    logStdout(`[dry-run] ${agentId}: ${prompt.slice(0, 120)}...`);
-    return '';
-  }
 
   let buffered = '';
   const result = await runCursor({
@@ -93,15 +76,5 @@ export async function runAgent(
   });
 
   const stdout = buffered || result.stdout || '';
-  try {
-    const memoryDir = path.resolve(cwd, '.codemachine', 'memory');
-    const adapter = new MemoryAdapter(memoryDir);
-    const store = new MemoryStore(adapter);
-    if (stdout.trim()) {
-      await store.append({ agentId, content: stdout, timestamp: new Date().toISOString() });
-    }
-  } catch {
-    // best-effort memory persistence
-  }
   return stdout;
 }

@@ -1,10 +1,12 @@
 export type UnknownRecord = Record<string, unknown>;
 
+import type { ControllerDefinition } from '../../shared/workflows/controller-helper.js';
+
 export interface LoopModuleBehavior {
   type: 'loop';
   action: 'stepBack';
   steps: number;
-  trigger?: string; // Optional: behavior now controlled via .codemachine/memory/behavior.json
+  trigger?: string; // Optional: now controlled via .codemachine/memory/directive.json
   maxIterations?: number;
   skip?: string[];
 }
@@ -35,20 +37,19 @@ export interface ModuleStep {
   model?: string;
   modelReasoningEffort?: 'low' | 'medium' | 'high';
   engine?: string; // Dynamic engine type from registry
-  fallbackChain?: string[]; // Ordered list of fallback engine IDs (e.g., ['claude', 'gemini', 'codex'])
   module?: ModuleMetadata;
   executeOnce?: boolean;
-  notCompletedFallback?: string; // Agent ID to run if step is in notCompletedSteps
+  interactive?: boolean; // Controls waiting behavior: true=wait for input, false=auto-advance
   tracks?: string[]; // Track names this step belongs to (e.g., ['bmad', 'enterprise'])
   conditions?: string[]; // Conditions required for this step (e.g., ['has_ui', 'has_api'])
 }
 
-export interface UIStep {
-  type: 'ui';
+export interface Separator {
+  type: 'separator';
   text: string;
 }
 
-export type WorkflowStep = ModuleStep | UIStep;
+export type WorkflowStep = ModuleStep | Separator;
 
 /**
  * Type guard to check if a step is a ModuleStep
@@ -57,9 +58,14 @@ export function isModuleStep(step: WorkflowStep): step is ModuleStep {
   return step.type === 'module';
 }
 
-export interface TrackConfig {
+export interface TrackOption {
   label: string;
   description?: string;
+}
+
+export interface TracksConfig {
+  question: string;
+  options: Record<string, TrackOption>;
 }
 
 export interface ConditionConfig {
@@ -67,13 +73,30 @@ export interface ConditionConfig {
   description?: string;
 }
 
+export interface ChildConditionGroup {
+  question: string;
+  multiSelect?: boolean; // default: false (radio buttons)
+  conditions: Record<string, ConditionConfig>;
+}
+
+export interface ConditionGroup {
+  id: string;
+  question: string;
+  multiSelect?: boolean; // default: false (radio buttons)
+  tracks?: string[]; // Track IDs this group applies to (empty/missing = all tracks)
+  conditions: Record<string, ConditionConfig>;
+  children?: Record<string, ChildConditionGroup>; // keyed by parent condition ID
+}
+
 export interface WorkflowTemplate {
   name: string;
   steps: WorkflowStep[];
   subAgentIds?: string[];
-  tracks?: Record<string, TrackConfig>;
-  conditions?: Record<string, ConditionConfig>;
-  controller?: boolean; // Enables autonomous mode with controller agent selection
+  tracks?: TracksConfig; // Track selection with question and options
+  conditionGroups?: ConditionGroup[]; // Grouped conditions with optional nested children
+  controller?: ControllerDefinition; // Controller agent for pre-workflow conversation
+  specification?: boolean; // If true, requires specification file before workflow can start
+  autonomousMode?: 'true' | 'false' | 'never' | 'always'; // Initial autonomous mode setting (default: 'true')
 }
 
 export type ModuleName = ModuleStep['agentId'];
@@ -81,13 +104,6 @@ export type ModuleName = ModuleStep['agentId'];
 export interface RunWorkflowOptions {
   cwd?: string;
   templatePath?: string;
-  specificationPath?: string;
-  /** Engine preset name (e.g., 'all-claude', 'all-gemini') */
-  enginePreset?: string;
-  /** Global engine override for all agents */
-  engineOverride?: string;
-  /** Per-agent engine overrides (agentId -> engineId) */
-  engineOverrides?: Record<string, string>;
 }
 
 export interface TaskManagerOptions {

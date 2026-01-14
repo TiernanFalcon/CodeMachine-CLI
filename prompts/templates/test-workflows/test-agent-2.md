@@ -1,10 +1,11 @@
-You are Test Agent 2. You will test parallel orchestration by running:
+Calculate 4+4= ? then say your name.
 
-bun run dev run "frontend-dev 'say your name' & frontend-dev 'say your name' & frontend-dev 'say your name'"
-2- MUST modify .codemachine/memory/behavior.json to make it exactly:
+After answering, write a directive file to pause the workflow:
+
+Write to `.codemachine/memory/directive.json`:
+```json
 {
-  "action": "checkpoint",
-  "reason": "Your plan needs modifications please check file .codemachine/memory/behavior.json"
+  "action": "pause",
+  "reason": "Testing pause directive"
 }
-no more no less
-This tests the orchestrator with parallel execution (all agents run simultaneously). 
+```

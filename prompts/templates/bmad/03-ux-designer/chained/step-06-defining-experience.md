@@ -31,6 +31,10 @@ Define the core interaction that, if nailed, makes everything else follow in the
 
 ## DEFINING EXPERIENCE SEQUENCE:
 
+### 0. Save Previous Step Content
+
+**First Action:** Append the confirmed content from Step 5 to the UX Design Specification document.
+
 ### 1. Identify the Defining Experience
 
 Focus on the core interaction:
@@ -162,18 +166,7 @@ Prepare the content to append to the document:
 [Detailed mechanics for core experience based on conversation]
 ```
 
-### 7. Step Completion
-
-**Save Content:**
-Append the content from step 6 to the UX Design Specification document now.
-
-**Confirmation:**
-"Content saved to document.
-
-I've defined the core experience for {{project_name}} - the interaction that will make users love this product.
-
-- If you want to **modify or add details**, just tell me what you'd like to change
-- If you're satisfied, **press Enter in the promptbox to go to the next step**"
+{step_completion}
 
 ## SUCCESS METRICS:
 

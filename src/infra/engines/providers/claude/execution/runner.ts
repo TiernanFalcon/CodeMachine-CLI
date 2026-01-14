@@ -5,6 +5,7 @@ import { spawnProcess } from '../../../../process/spawn.js';
 import { buildClaudeExecCommand } from './commands.js';
 import { metadata } from '../metadata.js';
 import { expandHomeDir } from '../../../../../shared/utils/index.js';
+import { ENV } from '../config.js';
 import { createTelemetryCapture } from '../../../../../shared/telemetry/index.js';
 import type { ParsedTelemetry } from '../../../core/types.js';
 import {
@@ -22,11 +23,14 @@ import {
 export interface RunClaudeOptions {
   prompt: string;
   workingDir: string;
+  resumeSessionId?: string;
+  resumePrompt?: string;
   model?: string;
   env?: NodeJS.ProcessEnv;
   onData?: (chunk: string) => void;
   onErrorData?: (chunk: string) => void;
   onTelemetry?: (telemetry: ParsedTelemetry) => void;
+  onSessionId?: (sessionId: string) => void;
   abortSignal?: AbortSignal;
   timeout?: number; // Timeout in milliseconds (default: 1800000ms = 30 minutes)
 }
@@ -34,15 +38,21 @@ export interface RunClaudeOptions {
 export interface RunClaudeResult {
   stdout: string;
   stderr: string;
-  /** True if the engine hit a rate limit */
-  isRateLimitError?: boolean;
-  /** When the rate limit resets (if known) */
-  rateLimitResetsAt?: Date;
-  /** Retry-after duration in seconds (if provided by API) */
-  retryAfterSeconds?: number;
 }
 
-const ANSI_ESCAPE_SEQUENCE = new RegExp(String.raw`\u001B\[[0-9;?]*[ -/]*[@-~]`, 'g');
+/**
+ * Build the final resume prompt combining steering instruction with user message
+ */
+function buildResumePrompt(userPrompt?: string): string {
+  const defaultPrompt = 'Continue from where you left off.';
+
+  if (!userPrompt) {
+    return defaultPrompt;
+  }
+
+  // Combine steering instruction with user's message
+  return `[USER STEERING] The user paused this session to give you new direction. Continue from where you left off, but prioritize the user's request: "${userPrompt}"`;
+}
 
 // Track tool names for associating with results
 const toolNameMap = new Map<string, string>();
@@ -110,16 +120,8 @@ function formatStreamJsonLine(line: string): string | null {
       const totalCached = cacheRead + cacheCreation;
       const totalIn = json.usage.input_tokens + totalCached;
 
-      // Show total input tokens with optional cached indicator
-      const _tokensDisplay = totalCached > 0
-        ? `${totalIn}in/${json.usage.output_tokens}out (${totalCached} cached)`
-        : `${totalIn}in/${json.usage.output_tokens}out`;
-
-      // Format telemetry line with rich formatting
-      const durationStr = formatDuration(json.duration_ms);
-      const costStr = formatCost(json.total_cost_usd);
-      const tokensStr = formatTokens(totalIn, json.usage.output_tokens, totalCached > 0 ? totalCached : undefined);
-      return addMarker('GRAY', `${SYMBOL_BULLET} `, 'DIM') + `${durationStr} ${addMarker('GRAY', '│', 'DIM')} ${costStr} ${addMarker('GRAY', '│', 'DIM')} ${tokensStr}`;
+      // Format telemetry line with unified format (matches other engines)
+      return `⏱️  Tokens: ${totalIn}in/${json.usage.output_tokens}out${totalCached > 0 ? ` (${totalCached} cached)` : ''}`;
     }
 
     return null;
@@ -129,11 +131,7 @@ function formatStreamJsonLine(line: string): string | null {
 }
 
 export async function runClaude(options: RunClaudeOptions): Promise<RunClaudeResult> {
-  const { prompt, workingDir, model, env, onData, onErrorData, onTelemetry, abortSignal, timeout = 1800000 } = options;
-
-  // Clear tool name map at start of each run to prevent memory leaks
-  // and data corruption between consecutive runs
-  toolNameMap.clear();
+  const { prompt, workingDir, resumeSessionId, resumePrompt, model, env, onData, onErrorData, onTelemetry, onSessionId, abortSignal, timeout = 1800000 } = options;
 
   if (!prompt) {
     throw new Error('runClaude requires a prompt.');
@@ -144,17 +142,27 @@ export async function runClaude(options: RunClaudeOptions): Promise<RunClaudeRes
   }
 
   // Set up CLAUDE_CONFIG_DIR for authentication
-  const claudeConfigDir = process.env.CLAUDE_CONFIG_DIR
-    ? expandHomeDir(process.env.CLAUDE_CONFIG_DIR)
+  const claudeConfigDir = process.env[ENV.CLAUDE_HOME]
+    ? expandHomeDir(process.env[ENV.CLAUDE_HOME]!)
     : path.join(homedir(), '.codemachine', 'claude');
 
-  const mergedEnv = {
+  const mergedEnv: NodeJS.ProcessEnv = {
     ...process.env,
     ...(env ?? {}),
     CLAUDE_CONFIG_DIR: claudeConfigDir,
   };
 
-  const plainLogs = (process.env.CODEMACHINE_PLAIN_LOGS || '').toString() === '1';
+  // Apply API override environment variables if set
+  if (process.env[ENV.ANTHROPIC_BASE_URL]) {
+    mergedEnv.ANTHROPIC_BASE_URL = process.env[ENV.ANTHROPIC_BASE_URL];
+  }
+  if (process.env[ENV.ANTHROPIC_AUTH_TOKEN]) {
+    mergedEnv.ANTHROPIC_AUTH_TOKEN = process.env[ENV.ANTHROPIC_AUTH_TOKEN];
+  }
+  if (process.env[ENV.ANTHROPIC_API_KEY]) {
+    mergedEnv.ANTHROPIC_API_KEY = process.env[ENV.ANTHROPIC_API_KEY];
+  }
+
   // Force pipe mode to ensure text normalization is applied
   const inheritTTY = false;
 
@@ -167,11 +175,6 @@ export async function runClaude(options: RunClaudeOptions): Promise<RunClaudeRes
     // So we keep only the text after the last \r in each line
     result = result.replace(/^.*\r([^\r\n]*)/gm, '$1');
 
-    if (plainLogs) {
-      // Plain mode: strip all ANSI sequences
-      result = result.replace(ANSI_ESCAPE_SEQUENCE, '');
-    }
-
     // Clean up line endings
     result = result
       .replace(/\r\n/g, '\n')  // Convert CRLF to LF
@@ -181,13 +184,14 @@ export async function runClaude(options: RunClaudeOptions): Promise<RunClaudeRes
     return result;
   };
 
-  const { command, args } = buildClaudeExecCommand({ workingDir, prompt, model });
+  const { command, args } = buildClaudeExecCommand({ workingDir, resumeSessionId, model });
 
   // Create telemetry capture instance
   const telemetryCapture = createTelemetryCapture('claude', model, prompt, workingDir);
 
   // Track JSON error events (Claude may exit 0 even on errors)
   let capturedError: string | null = null;
+  let sessionIdCaptured = false;
 
   let result;
   try {
@@ -196,7 +200,7 @@ export async function runClaude(options: RunClaudeOptions): Promise<RunClaudeRes
       args,
       cwd: workingDir,
       env: mergedEnv,
-      stdinInput: prompt, // Pass prompt via stdin instead of command-line argument
+      stdinInput: resumeSessionId ? buildResumePrompt(resumePrompt) : prompt,
     onStdout: inheritTTY
       ? undefined
       : (chunk) => {
@@ -213,6 +217,13 @@ export async function runClaude(options: RunClaudeOptions): Promise<RunClaudeRes
             // Check for error events (Claude may exit 0 even on errors like invalid model)
             try {
               const json = JSON.parse(line);
+
+              // Capture session ID from first event that contains it
+              if (!sessionIdCaptured && json.session_id && onSessionId) {
+                sessionIdCaptured = true;
+                onSessionId(json.session_id);
+              }
+
               // Check for error in result type
               if (json.type === 'result' && json.is_error && json.result && !capturedError) {
                 capturedError = json.result;
@@ -275,8 +286,6 @@ export async function runClaude(options: RunClaudeOptions): Promise<RunClaudeRes
   if (result.exitCode !== 0 || capturedError) {
     // Use captured error from streaming, or fall back to parsing output
     let errorMessage = capturedError || `Claude CLI exited with code ${result.exitCode}`;
-    let isRateLimitError = false;
-    let retryAfterSeconds: number | undefined;
 
     if (!capturedError) {
       const errorOutput = result.stderr.trim() || result.stdout.trim() || 'no error output';
@@ -290,11 +299,6 @@ export async function runClaude(options: RunClaudeOptions): Promise<RunClaudeRes
             // Check for error in result type
             if (json.type === 'result' && json.is_error && json.result) {
               errorMessage = json.result;
-              // Check if it's a rate limit error message
-              if (errorMessage.toLowerCase().includes('rate limit') ||
-                  errorMessage.toLowerCase().includes('too many requests')) {
-                isRateLimitError = true;
-              }
               break;
             }
 
@@ -305,23 +309,10 @@ export async function runClaude(options: RunClaudeOptions): Promise<RunClaudeRes
                 errorMessage = messageText;
               } else if (json.error === 'rate_limit') {
                 errorMessage = 'Rate limit reached. Please try again later.';
-                isRateLimitError = true;
-                // Try to extract retry-after from error details
-                if (json.retry_after) {
-                  retryAfterSeconds = json.retry_after;
-                }
               } else {
                 errorMessage = json.error;
               }
               break;
-            }
-
-            // Check for rate limit specific error type
-            if (json.error?.type === 'rate_limit_error' || json.error === 'rate_limit') {
-              isRateLimitError = true;
-              if (json.error?.retry_after) {
-                retryAfterSeconds = json.error.retry_after;
-              }
             }
           }
         }
@@ -331,29 +322,7 @@ export async function runClaude(options: RunClaudeOptions): Promise<RunClaudeRes
         if (lines.length > 0 && lines[0]) {
           errorMessage = lines.join('\n');
         }
-        // Check raw output for rate limit indicators
-        if (errorMessage.toLowerCase().includes('rate limit') ||
-            errorMessage.includes('429') ||
-            errorMessage.toLowerCase().includes('too many requests')) {
-          isRateLimitError = true;
-        }
       }
-    }
-
-    // If it's a rate limit error, return result with flag instead of throwing
-    if (isRateLimitError) {
-      if (onErrorData) {
-        onErrorData(`\n[RATE LIMIT] ${errorMessage}\n`);
-      }
-      return {
-        stdout: result.stdout,
-        stderr: result.stderr,
-        isRateLimitError: true,
-        retryAfterSeconds,
-        rateLimitResetsAt: retryAfterSeconds
-          ? new Date(Date.now() + retryAfterSeconds * 1000)
-          : undefined,
-      };
     }
 
     // Send error to stderr callback if provided

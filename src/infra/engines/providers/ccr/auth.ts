@@ -1,13 +1,18 @@
-import { stat, rm, writeFile, mkdir } from 'node:fs/promises';
+import { stat } from 'node:fs/promises';
 import * as path from 'node:path';
 import { homedir } from 'node:os';
 
 import { expandHomeDir } from '../../../../shared/utils/index.js';
+import {
+  checkCliInstalled,
+  displayCliNotInstalledError,
+  ensureAuthDirectory,
+  createCredentialFile,
+  cleanupAuthFiles,
+  getNextAuthAction,
+} from '../../core/auth.js';
 import { metadata } from './metadata.js';
-import { isCliInstalled, displayCliNotInstalledError } from '../../core/cli-utils.js';
-
-/** CCR version pattern for validation */
-const CCR_VERSION_PATTERN = /version:\s*\d+\.\d+\.\d+/i;
+import { ENV } from './config.js';
 
 export interface CcrAuthOptions {
   ccrConfigDir?: string;
@@ -21,8 +26,8 @@ export function resolveCcrConfigDir(options?: CcrAuthOptions): string {
     return expandHomeDir(options.ccrConfigDir);
   }
 
-  if (process.env.CCR_CONFIG_DIR) {
-    return expandHomeDir(process.env.CCR_CONFIG_DIR);
+  if (process.env[ENV.CCR_HOME]) {
+    return expandHomeDir(process.env[ENV.CCR_HOME]!);
   }
 
   // Authentication is shared globally
@@ -57,7 +62,7 @@ export async function isAuthenticated(options?: CcrAuthOptions): Promise<boolean
   try {
     await stat(credPath);
     return true;
-  } catch (_error) {
+  } catch {
     return false;
   }
 }
@@ -78,11 +83,8 @@ export async function ensureAuth(options?: CcrAuthOptions): Promise<boolean> {
     // Credentials file doesn't exist
   }
 
-  // Check if CLI is installed (CCR uses -v flag and may have non-zero exit)
-  const cliInstalled = await isCliInstalled(metadata.cliBinary, {
-    versionFlag: '-v',
-    validOutputPatterns: [CCR_VERSION_PATTERN],
-  });
+  // Check if CLI is installed (CCR uses -v instead of --version)
+  const cliInstalled = await checkCliInstalled(metadata.cliBinary, { versionFlag: '-v' });
   if (!cliInstalled) {
     displayCliNotInstalledError(metadata);
     throw new Error(`${metadata.name} CLI is not installed.`);
@@ -90,8 +92,8 @@ export async function ensureAuth(options?: CcrAuthOptions): Promise<boolean> {
 
   // Create the .enable marker file
   const ccrDir = path.dirname(credPath);
-  await mkdir(ccrDir, { recursive: true });
-  await writeFile(credPath, '', { encoding: 'utf8' });
+  await ensureAuthDirectory(ccrDir);
+  await createCredentialFile(credPath, '');
 
   // Show configuration tip
   console.log(`\n────────────────────────────────────────────────────────────`);
@@ -124,22 +126,12 @@ export async function ensureAuth(options?: CcrAuthOptions): Promise<boolean> {
 export async function clearAuth(options?: CcrAuthOptions): Promise<void> {
   const configDir = resolveCcrConfigDir(options);
   const authPaths = getCcrAuthPaths(configDir);
-
-  // Remove all auth-related files
-  await Promise.all(
-    authPaths.map(async (authPath) => {
-      try {
-        await rm(authPath, { force: true });
-      } catch (_error) {
-        // Ignore removal errors; treat as cleared
-      }
-    }),
-  );
+  await cleanupAuthFiles(authPaths);
 }
 
 /**
  * Returns the next auth menu action based on current auth state
  */
 export async function nextAuthMenuAction(options?: CcrAuthOptions): Promise<'login' | 'logout'> {
-  return (await isAuthenticated(options)) ? 'logout' : 'login';
+  return getNextAuthAction(await isAuthenticated(options));
 }

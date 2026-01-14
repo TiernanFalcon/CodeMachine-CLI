@@ -15,7 +15,7 @@ import type {
   WorkflowStatus,
   SubAgentState,
   TriggeredAgentState,
-} from '../shared/types.js';
+} from '../../cli/tui/routes/workflow/state/types.js';
 
 /**
  * Agent information for adding to UI
@@ -28,15 +28,57 @@ export interface AgentInfo {
   stepIndex: number;
   totalSteps: number;
   status: AgentStatus;
+  orderIndex: number; // Overall step position for timeline ordering
 }
 
 /**
- * UI element information (text labels in timeline)
+ * Separator information (visual dividers in timeline)
  */
-export interface UIElementInfo {
+export interface SeparatorInfo {
   id: string;
   text: string;
   stepIndex: number;
+}
+
+/**
+ * Progress tracking state
+ */
+export interface ProgressState {
+  currentStep: number;
+  totalSteps: number;
+  stepName?: string;
+}
+
+/**
+ * Workflow phase - distinguishes onboarding (controller chat) from workflow execution
+ */
+export type WorkflowPhase = 'onboarding' | 'executing';
+
+// ─────────────────────────────────────────────────────────────────
+// Onboarding Types
+// ─────────────────────────────────────────────────────────────────
+
+/**
+ * Onboarding step identifiers
+ */
+export type OnboardStep = 'project_name' | 'tracks' | 'condition_group' | 'condition_child';
+
+/**
+ * Onboarding configuration passed to service
+ */
+export interface OnboardConfig {
+  hasTracks: boolean;
+  hasConditions: boolean;
+  initialProjectName?: string | null;
+}
+
+/**
+ * Onboarding result returned on completion
+ */
+export interface OnboardResult {
+  projectName?: string;
+  trackId?: string;
+  conditions?: string[];
 }
 
 /**
@@ -50,9 +92,14 @@ export type WorkflowEvent =
   | { type: 'agent:model'; agentId: string; model: string }
   | { type: 'agent:telemetry'; agentId: string; telemetry: Partial<AgentTelemetry> }
   | { type: 'agent:reset'; agentId: string; cycleNumber?: number }
-  | { type: 'agent:goal'; agentId: string; goal: string }
-  | { type: 'agent:current-file'; agentId: string; file: string }
-  | { type: 'agent:current-action'; agentId: string; action: string }
+
+  // Controller agent events
+  | { type: 'controller:info'; id: string; name: string; engine: string; model?: string }
+  | { type: 'controller:engine'; engine: string }
+  | { type: 'controller:model'; model: string }
+  | { type: 'controller:telemetry'; telemetry: Partial<AgentTelemetry> }
+  | { type: 'controller:status'; status: AgentStatus }
+  | { type: 'controller:monitoring'; monitoringId: number }
 
   // Sub-agent events
   | { type: 'subagent:added'; parentId: string; subAgent: SubAgentState }
@@ -67,6 +114,7 @@ export type WorkflowEvent =
   | { type: 'workflow:status'; status: WorkflowStatus }
   | { type: 'workflow:started'; workflowName: string; totalSteps: number }
   | { type: 'workflow:stopped'; reason?: string }
+  | { type: 'workflow:phase'; phase: WorkflowPhase }
 
   // Loop events
   | { type: 'loop:state'; loopState: LoopState | null }
@@ -85,16 +133,24 @@ export type WorkflowEvent =
   // Message/logging events
   | { type: 'message:log'; agentId: string; message: string }
 
-  // UI element events
-  | { type: 'ui:element'; element: UIElementInfo }
+  // Separator events (visual dividers)
+  | { type: 'separator:add'; separator: SeparatorInfo }
 
   // Monitoring ID registration (for log file access)
   | { type: 'monitoring:register'; uiAgentId: string; monitoringId: number }
 
-  // Engine rate limit events
-  | { type: 'engine:rate-limited'; engineId: string; resetsAt?: Date; retryAfterSeconds?: number }
-  | { type: 'engine:available'; engineId: string }
-  | { type: 'engine:fallback'; fromEngine: string; toEngine: string; reason: string };
+  // Progress tracking (step indicator)
+  | { type: 'progress:state'; progress: ProgressState | null }
+
+  // Onboarding events
+  | { type: 'onboard:started'; config: OnboardConfig }
+  | { type: 'onboard:step'; step: OnboardStep; question: string }
+  | { type: 'onboard:project_name'; name: string }
+  | { type: 'onboard:track'; trackId: string }
+  | { type: 'onboard:condition'; conditionId: string; groupIndex: number; isChild: boolean }
+  | { type: 'onboard:conditions_confirmed'; conditions: string[]; groupIndex: number }
+  | { type: 'onboard:completed'; result: OnboardResult }
+  | { type: 'onboard:cancelled' };
 
 /**
  * Extract event type from WorkflowEvent union

@@ -5,7 +5,7 @@
  */
 
 import type { RGBA } from "@opentui/core"
-import type { PromptLineState } from "./prompt-line.js"
+import type { PromptLineState } from "./prompt-line/types.js"
 
 export interface Theme {
   textMuted: RGBA

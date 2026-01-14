@@ -1,9 +1,9 @@
 import { AgentMonitorService } from './monitor.js';
 import { AgentLoggerService } from './logger.js';
-import { closeDB } from './db/connection.js';
+import { StatusService } from './status.js';
 import * as logger from '../../shared/logging/logger.js';
+import { setShuttingDown } from '../../shared/logging/logger.js';
 import { killAllActiveProcesses } from '../../infra/process/spawn.js';
-import { getControlBus } from '../../workflows/control/index.js';
 
 /**
  * Handles graceful cleanup of monitoring state on process termination
@@ -19,13 +19,19 @@ export class MonitoringCleanup {
   private static workflowHandlers: {
     onStop?: () => void;
     onExit?: () => void;
+    onBeforeCleanup?: () => Promise<void>;
   } = {};
 
   /**
    * Register callbacks invoked during the two-stage Ctrl+C flow.
+   * Merges with existing handlers (new handlers override existing ones for the same key).
    */
-  static registerWorkflowHandlers(handlers: { onStop?: () => void; onExit?: () => void }): void {
-    this.workflowHandlers = handlers;
+  static registerWorkflowHandlers(handlers: {
+    onStop?: () => void;
+    onExit?: () => void;
+    onBeforeCleanup?: () => Promise<void>;
+  }): void {
+    this.workflowHandlers = { ...this.workflowHandlers, ...handlers };
   }
 
   static clearWorkflowHandlers(): void {
@@ -91,14 +97,6 @@ export class MonitoringCleanup {
       process.exit(1);
     });
 
-    // Handle normal exit (cleanup resources before exit)
-    process.on('beforeExit', async () => {
-      if (!this.isCleaningUp) {
-        logger.debug('Process exiting normally, closing resources...');
-        closeDB();
-      }
-    });
-
     logger.debug('MonitoringCleanup signal handlers initialized');
   }
 
@@ -142,8 +140,20 @@ export class MonitoringCleanup {
     // Second Ctrl+C (after debounce): Stop workflow and exit
     logger.debug(`[${source}] Second Ctrl+C detected after ${timeSinceFirst}ms - stopping workflow and exiting`);
 
-    // Emit skip event via control bus to abort the currently running step
-    getControlBus().emit('skip');
+    // Suppress all error/warn logs during graceful shutdown
+    setShuttingDown(true);
+
+    // Emit workflow:stop to stop the workflow (not skip to next step)
+    (process as NodeJS.EventEmitter).emit('workflow:stop');
+
+    // Save session state for active agents before cleanup (for resume on restart)
+    if (this.workflowHandlers.onBeforeCleanup) {
+      try {
+        await this.workflowHandlers.onBeforeCleanup();
+      } catch (error) {
+        logger.debug('onBeforeCleanup failed:', error);
+      }
+    }
 
     // Stop active agents
     await this.stopActiveAgents();
@@ -162,6 +172,9 @@ export class MonitoringCleanup {
    */
   private static async handleSignal(signal: string, message: string): Promise<void> {
     logger.debug(`Received ${signal}: ${message}`);
+
+    // Suppress all error/warn logs during graceful shutdown
+    setShuttingDown(true);
 
     // Kill all active child processes before cleanup
     logger.debug('Killing all active child processes...');
@@ -192,6 +205,7 @@ export class MonitoringCleanup {
     try {
       const monitor = AgentMonitorService.getInstance();
       const loggerService = AgentLoggerService.getInstance();
+      const status = StatusService.getInstance();
 
       const runningAgents = monitor.getActiveAgents();
 
@@ -200,14 +214,12 @@ export class MonitoringCleanup {
 
         for (const agent of runningAgents) {
           try {
-            // Mark agent as failed with appropriate error
+            // Handle abort status (skipped check + paused/failed logic)
             const errorMsg = error || new Error(`Agent ${reason}: ${agent.name}`);
-            await monitor.fail(agent.id, errorMsg);
+            await status.handleAbort(agent.id, errorMsg);
 
             // Close log stream (now async)
             await loggerService.closeStream(agent.id);
-
-            logger.debug(`Marked agent ${agent.id} (${agent.name}) as ${reason}`);
           } catch (cleanupError) {
             logger.error(`Failed to cleanup agent ${agent.id}:`, cleanupError);
           }
@@ -215,13 +227,9 @@ export class MonitoringCleanup {
 
         // Release any remaining locks
         await loggerService.releaseAllLocks();
+
+        logger.debug('Cleanup complete');
       }
-
-      // Close database connection
-      logger.debug('Closing database connection...');
-      closeDB();
-
-      logger.debug('Cleanup complete');
     } catch (error) {
       logger.error('Error during cleanup:', error);
     } finally {

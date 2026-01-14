@@ -16,15 +16,31 @@
  * to ensure the plugin is registered before any JSX files are parsed.
  */
 
+import { appDebug } from '../../shared/logging/logger.js';
+
 // Only load preload in dev mode (when running from source)
 // In production binaries, JSX is pre-transformed during build
 const isDev = import.meta.url.includes('/src/')
+appDebug('[Launcher] isDev=%s', isDev);
 if (isDev) {
+  appDebug('[Launcher] Loading OpenTUI preload');
   await import("@opentui/solid/preload")
+  appDebug('[Launcher] OpenTUI preload loaded');
 }
 
 // Dynamic import ensures app.js is loaded AFTER preload is registered (in dev)
 export async function startTUI() {
-  const app = await import("./app.js");
-  return app.startTUI();
+  appDebug('[Launcher] startTUI() called');
+  appDebug('[Launcher] Importing TUI app module');
+  try {
+    const app = await import("./app.js");
+    appDebug('[Launcher] app.js imported successfully');
+    appDebug('[Launcher] Calling app.startTUI()');
+    const result = await app.startTUI();
+    appDebug('[Launcher] app.startTUI() returned');
+    return result;
+  } catch (err) {
+    appDebug('[Launcher] Error: %s', err);
+    throw err;
+  }
 }

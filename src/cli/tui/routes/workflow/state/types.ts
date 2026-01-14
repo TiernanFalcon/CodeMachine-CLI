@@ -1,34 +1,26 @@
 import type { RGBA } from "@opentui/core"
 
-// Import and re-export shared types from workflow layer (single source of truth)
-// This fixes the layer violation where workflow was importing from TUI
-import type {
-  AgentStatus,
-  AgentTelemetry,
-  WorkflowStatus,
-  LoopState,
-  CheckpointState,
-  QueuedPrompt,
-  InputState,
-  ChainedState,
-} from '../../../../../workflows/shared/types.js'
+export type AgentStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "failed"
+  | "skipped"
+  | "retrying"
+  | "paused"
+  | "awaiting"
+  | "delegated"
 
-// Re-export the shared types
-export type {
-  AgentStatus,
-  AgentTelemetry,
-  WorkflowStatus,
-  LoopState,
-  CheckpointState,
-  QueuedPrompt,
-  InputState,
-  ChainedState,
+export interface AgentTelemetry {
+  tokensIn: number
+  tokensOut: number
+  cached?: number
+  cost?: number
+  duration?: number
 }
 
-/**
- * Full agent state with UI-specific properties
- * Extends the shared AgentTelemetry with display state
- */
+export type AutonomousMode = "true" | "false" | "never" | "always"
+
 export interface AgentState {
   id: string
   name: string
@@ -38,6 +30,7 @@ export interface AgentState {
   telemetry: AgentTelemetry
   startTime: number
   endTime?: number
+  duration?: number // Final duration in seconds (set when agent completes)
   error?: string
   toolCount: number
   thinkingCount: number
@@ -45,38 +38,52 @@ export interface AgentState {
   loopReason?: string
   stepIndex?: number
   totalSteps?: number
+  orderIndex?: number // Overall step position for timeline ordering
   monitoringId?: number // Maps to AgentMonitorService registry ID for log file access
-  goal?: string // Agent's current goal/task
-  currentFile?: string // File being processed
-  currentAction?: string // Current action description
 }
 
-/**
- * Sub-agent state with parent reference
- */
 export interface SubAgentState extends AgentState {
   parentId: string
 }
 
-/**
- * Triggered agent state with trigger info
- */
 export interface TriggeredAgentState extends AgentState {
   triggeredBy: string
   triggerCondition?: string
 }
 
-/**
- * Rate limit waiting state - when all engines are rate-limited
- */
-export interface RateLimitState {
+export interface LoopState {
   active: boolean
-  /** When the soonest engine resets */
-  resetsAt?: Date
-  /** Which engine will reset first */
-  engineId?: string
-  /** List of all rate-limited engines */
-  rateLimitedEngines?: string[]
+  sourceAgent: string
+  backSteps: number
+  iteration: number
+  maxIterations: number
+  skipList: string[]
+  reason?: string
+}
+
+export type WorkflowStatus = "running" | "stopping" | "completed" | "stopped" | "awaiting" | "paused" | "error"
+
+export interface CheckpointState {
+  active: boolean
+  reason?: string
+}
+
+export interface QueuedPrompt {
+  name: string
+  label: string  // description
+  content: string
+}
+
+/**
+ * Unified input state - replaces both pause and chained prompts
+ * When active, the workflow is waiting for user input before continuing
+ */
+export interface InputState {
+  active: boolean
+  // Optional queued prompts (from workflow chained prompts config)
+  queuedPrompts?: QueuedPrompt[]
+  currentIndex?: number
+  monitoringId?: number
 }
 
 /** @deprecated Use InputState instead */
@@ -84,6 +91,15 @@ export interface ChainedPromptInfo {
   name: string
   label: string
   content: string
+}
+
+/** @deprecated Use InputState instead */
+export interface ChainedState {
+  active: boolean
+  currentIndex: number
+  totalPrompts: number
+  nextPromptLabel: string | null
+  monitoringId?: number
 }
 
 export interface ExecutionRecord {
@@ -102,27 +118,39 @@ export interface ExecutionRecord {
   error?: string
 }
 
-export interface UIElement {
+export interface SeparatorItem {
   id: string
   text: string
   stepIndex: number
 }
 
+export interface ControllerState {
+  id: string
+  name: string
+  engine: string
+  model?: string
+  status?: AgentStatus      // Only set during onboarding phase
+  telemetry: AgentTelemetry
+  monitoringId?: number     // Only set during onboarding phase (for log viewer)
+}
+
+export type WorkflowPhase = 'onboarding' | 'executing'
+
 export interface WorkflowState {
   workflowName: string
   version: string
   packageName: string
+  phase: WorkflowPhase       // 'onboarding' = controller chat, 'executing' = workflow running
   startTime: number
   endTime?: number
   agents: AgentState[]
   subAgents: Map<string, SubAgentState[]>
   triggeredAgents: TriggeredAgentState[]
-  uiElements: UIElement[]
+  separators: SeparatorItem[]
   executionHistory: ExecutionRecord[]
   loopState: LoopState | null
   checkpointState: CheckpointState | null
   inputState: InputState | null
-  rateLimitState: RateLimitState | null
   /** @deprecated Use inputState instead */
   chainedState: ChainedState | null
   expandedNodes: Set<string>
@@ -137,11 +165,8 @@ export interface WorkflowState {
   workflowStatus: WorkflowStatus
   agentIdMapVersion: number
   agentLogs: Map<string, string[]>
-  autonomousMode: boolean
-  /** Currently selected engine preset (null = use step defaults) */
-  selectedEnginePreset: string | null
-  /** Whether fallback to other engines is enabled on rate limit (default: true) */
-  fallbackEnabled: boolean
+  autonomousMode: AutonomousMode
+  controllerState: ControllerState | null
 }
 
 export type ThemeLike = {

@@ -13,7 +13,7 @@ import { debug } from '../../shared/logging/logger.js';
 import type { WorkflowEventBus } from './event-bus.js';
 import type {
   AgentInfo,
-  UIElementInfo,
+  SeparatorInfo,
   WorkflowEvent,
 } from './types.js';
 import type {
@@ -38,7 +38,7 @@ import type {
  *
  * // These emit events to the bus
  * emitter.workflowStarted('My Workflow', 5);
- * emitter.addMainAgent('agent-1', 'Planner', 'claude', 0, 5);
+ * emitter.addMainAgent('agent-1', 'Planner', 'claude', 0, 5, 0);
  * emitter.updateAgentStatus('agent-1', 'running');
  * ```
  */
@@ -95,6 +95,17 @@ export class WorkflowEventEmitter {
     });
   }
 
+  /**
+   * Emit workflow phase change (onboarding vs executing)
+   */
+  setWorkflowPhase(phase: 'onboarding' | 'executing'): void {
+    debug('[Emitter] workflow:phase phase=%s', phase);
+    this.bus.emit({
+      type: 'workflow:phase',
+      phase,
+    });
+  }
+
   // ─────────────────────────────────────────────────────────────────
   // Main Agents
   // ─────────────────────────────────────────────────────────────────
@@ -109,11 +120,12 @@ export class WorkflowEventEmitter {
     engine: string,
     stepIndex: number,
     totalSteps: number,
+    orderIndex: number,
     status: AgentStatus = 'pending',
     model?: string
   ): void {
-    debug('[Emitter] agent:added id=%s name=%s engine=%s step=%d/%d status=%s',
-      agentId, name, engine, stepIndex, totalSteps, status);
+    debug('[Emitter] agent:added id=%s name=%s engine=%s step=%d/%d order=%d status=%s',
+      agentId, name, engine, stepIndex, totalSteps, orderIndex, status);
 
     // Track step info for this agent
     this.agentStepMap.set(agentId, { stepIndex, totalSteps });
@@ -126,6 +138,7 @@ export class WorkflowEventEmitter {
       stepIndex,
       totalSteps,
       status,
+      orderIndex,
     };
 
     this.bus.emit({
@@ -174,6 +187,8 @@ export class WorkflowEventEmitter {
    * Mirrors: ui.updateAgentTelemetry(agentId, telemetry)
    */
   updateAgentTelemetry(agentId: string, telemetry: Partial<AgentTelemetry>): void {
+    debug('[TELEMETRY:3-EMITTER] [STEP-AGENT] agent:telemetry event → agentId=%s, tokensIn=%s, tokensOut=%s, cached=%s',
+      agentId, telemetry.tokensIn, telemetry.tokensOut, telemetry.cached);
     this.bus.emit({
       type: 'agent:telemetry',
       agentId,
@@ -193,39 +208,74 @@ export class WorkflowEventEmitter {
     });
   }
 
+  // ─────────────────────────────────────────────────────────────────
+  // Controller Agent
+  // ─────────────────────────────────────────────────────────────────
+
   /**
-   * Emit agent goal update
+   * Emit controller agent info (id, name, engine, model)
    */
-  setAgentGoal(agentId: string, goal: string): void {
-    debug('[Emitter] agent:goal id=%s goal=%s', agentId, goal);
+  setControllerInfo(id: string, name: string, engine: string, model?: string): void {
     this.bus.emit({
-      type: 'agent:goal',
-      agentId,
-      goal,
+      type: 'controller:info',
+      id,
+      name,
+      engine,
+      model,
     });
   }
 
   /**
-   * Emit agent current file update
+   * Emit controller engine update
    */
-  setCurrentFile(agentId: string, file: string): void {
-    debug('[Emitter] agent:current-file id=%s file=%s', agentId, file);
+  updateControllerEngine(engine: string): void {
     this.bus.emit({
-      type: 'agent:current-file',
-      agentId,
-      file,
+      type: 'controller:engine',
+      engine,
     });
   }
 
   /**
-   * Emit agent current action update
+   * Emit controller model update
    */
-  setCurrentAction(agentId: string, action: string): void {
-    debug('[Emitter] agent:current-action id=%s action=%s', agentId, action);
+  updateControllerModel(model: string): void {
     this.bus.emit({
-      type: 'agent:current-action',
-      agentId,
-      action,
+      type: 'controller:model',
+      model,
+    });
+  }
+
+  /**
+   * Emit controller telemetry update
+   */
+  updateControllerTelemetry(telemetry: Partial<AgentTelemetry>): void {
+    debug('[TELEMETRY:3-EMITTER] [CONTROLLER] controller:telemetry event → tokensIn=%s, tokensOut=%s, cached=%s',
+      telemetry.tokensIn, telemetry.tokensOut, telemetry.cached);
+    this.bus.emit({
+      type: 'controller:telemetry',
+      telemetry,
+    });
+  }
+
+  /**
+   * Emit controller status change (only call during onboarding phase)
+   */
+  updateControllerStatus(status: AgentStatus): void {
+    debug('[Emitter] controller:status status=%s', status);
+    this.bus.emit({
+      type: 'controller:status',
+      status,
+    });
+  }
+
+  /**
+   * Emit controller monitoring ID registration (only call during onboarding phase)
+   */
+  registerControllerMonitoring(monitoringId: number): void {
+    debug('[Emitter] controller:monitoring monitoringId=%d', monitoringId);
+    this.bus.emit({
+      type: 'controller:monitoring',
+      monitoringId,
     });
   }
 
@@ -400,19 +450,19 @@ export class WorkflowEventEmitter {
   }
 
   /**
-   * Emit UI element added
-   * Mirrors: ui.addUIElement(text, stepIndex)
+   * Emit separator added (visual divider in timeline)
+   * Mirrors: ui.addSeparator(text, stepIndex)
    */
-  addUIElement(text: string, stepIndex: number): void {
-    const element: UIElementInfo = {
-      id: `ui-element-${stepIndex}-${Date.now()}`,
+  addSeparator(text: string, stepIndex: number): void {
+    const separator: SeparatorInfo = {
+      id: `separator-${stepIndex}-${Date.now()}`,
       text,
       stepIndex,
     };
 
     this.bus.emit({
-      type: 'ui:element',
-      element,
+      type: 'separator:add',
+      separator,
     });
   }
 
@@ -430,48 +480,6 @@ export class WorkflowEventEmitter {
       type: 'monitoring:register',
       uiAgentId,
       monitoringId,
-    });
-  }
-
-  // ─────────────────────────────────────────────────────────────────
-  // Engine Rate Limit Events
-  // ─────────────────────────────────────────────────────────────────
-
-  /**
-   * Emit engine rate limited event
-   */
-  engineRateLimited(engineId: string, resetsAt?: Date, retryAfterSeconds?: number): void {
-    debug('[Emitter] engine:rate-limited engineId=%s resetsAt=%s retryAfter=%d',
-      engineId, resetsAt?.toISOString() ?? '(unknown)', retryAfterSeconds ?? 0);
-    this.bus.emit({
-      type: 'engine:rate-limited',
-      engineId,
-      resetsAt,
-      retryAfterSeconds,
-    });
-  }
-
-  /**
-   * Emit engine available event (rate limit expired)
-   */
-  engineAvailable(engineId: string): void {
-    debug('[Emitter] engine:available engineId=%s', engineId);
-    this.bus.emit({
-      type: 'engine:available',
-      engineId,
-    });
-  }
-
-  /**
-   * Emit engine fallback event
-   */
-  engineFallback(fromEngine: string, toEngine: string, reason: string): void {
-    debug('[Emitter] engine:fallback from=%s to=%s reason=%s', fromEngine, toEngine, reason);
-    this.bus.emit({
-      type: 'engine:fallback',
-      fromEngine,
-      toEngine,
-      reason,
     });
   }
 }

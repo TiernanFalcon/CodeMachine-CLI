@@ -31,6 +31,10 @@ Generate comprehensive design direction mockups showing different visual approac
 
 ## DESIGN DIRECTIONS SEQUENCE:
 
+### 0. Save Previous Step Content
+
+**First Action:** Append the confirmed content from Step 7 to the UX Design Specification document.
+
 ### 1. Generate Design Direction Variations
 
 Create diverse visual explorations:
@@ -134,17 +138,10 @@ Prepare the content to append to the document:
 
 ### 7. Step Completion
 
-**Save Content:**
-1. Create HTML showcase at `.codemachine/artifacts/ux-design-directions.html`
-2. Append content from step 6 to the document
+**Generate Artifact:**
+Create HTML showcase at `.codemachine/artifacts/ux-design-directions.html`
 
-**Confirmation:**
-"Content saved to document and HTML mockups generated.
-
-I've documented our design direction decision for {{project_name}}. This visual approach will guide all our detailed design work.
-
-- If you want to **modify or add details**, just tell me what you'd like to change
-- If you're satisfied, **press Enter in the promptbox to go to the next step**"
+{step_completion}
 
 ## SUCCESS METRICS:
 

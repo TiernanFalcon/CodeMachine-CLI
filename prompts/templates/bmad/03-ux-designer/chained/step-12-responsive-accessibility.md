@@ -31,6 +31,10 @@ Define responsive design strategy and accessibility requirements for the product
 
 ## RESPONSIVE & ACCESSIBILITY SEQUENCE:
 
+### 0. Save Previous Step Content
+
+**First Action:** Append the confirmed content from Step 11 to the UX Design Specification document.
+
 ### 1. Define Responsive Strategy
 
 Establish how the design adapts across devices:
@@ -172,18 +176,7 @@ Prepare the content to append to the document:
 [Implementation guidelines based on conversation]
 ```
 
-### 7. Step Completion
-
-**Save Content:**
-Append the content from step 6 to the UX Design Specification document now.
-
-**Confirmation:**
-"Content saved to document.
-
-I've defined the responsive design and accessibility strategy for {{project_name}}. This ensures your product works beautifully across all devices and is accessible to all users.
-
-- If you want to **modify or add details**, just tell me what you'd like to change
-- If you're satisfied, **press Enter in the promptbox to go to the next step**"
+{step_completion}
 
 ## SUCCESS METRICS:
 

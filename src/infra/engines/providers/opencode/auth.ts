@@ -1,15 +1,16 @@
-import { stat, rm, writeFile, mkdir, readFile } from 'node:fs/promises';
+import { stat, rm, writeFile, readFile } from 'node:fs/promises';
 import * as path from 'node:path';
 import { homedir } from 'node:os';
 
 import { expandHomeDir } from '../../../../shared/utils/index.js';
-import { metadata } from './metadata.js';
 import {
-  isCliInstalled,
-  isCliNotFoundError,
   displayCliNotInstalledError,
-  displayCliNotFoundError,
-} from '../../core/cli-utils.js';
+  isCommandNotFoundError,
+  ensureAuthDirectory,
+  createCredentialFile,
+} from '../../core/auth.js';
+import { metadata } from './metadata.js';
+import { ENV } from './config.js';
 
 const SENTINEL_FILE = 'auth.json';
 
@@ -17,21 +18,26 @@ const SENTINEL_FILE = 'auth.json';
  * Resolves the OpenCode home directory (base for all XDG paths)
  */
 function resolveOpenCodeHome(customPath?: string): string {
-  const configured = customPath ?? process.env.OPENCODE_HOME;
+  const configured = customPath ?? process.env[ENV.OPENCODE_HOME];
   const target = configured ? expandHomeDir(configured) : path.join(homedir(), '.codemachine', 'opencode');
   return target;
-}
-
-async function ensureDataDirExists(dataDir: string): Promise<void> {
-  await mkdir(dataDir, { recursive: true });
 }
 
 function getSentinelPath(opencodeHome: string): string {
   return path.join(opencodeHome, 'data', SENTINEL_FILE);
 }
 
+/**
+ * Check if CLI binary exists in PATH (instant, no subprocess)
+ * OpenCode works with zero config - just needs to be installed
+ */
+function isCliInstalled(command: string): boolean {
+  return Bun.which(command) !== null;
+}
 
 export async function isAuthenticated(): Promise<boolean> {
+  // OpenCode works with zero config - just needs to be installed
+  // No auth check required; users can optionally login for specific APIs
   return isCliInstalled(metadata.cliBinary);
 }
 
@@ -73,18 +79,12 @@ export async function ensureAuth(forceLogin = false): Promise<boolean> {
   }
 
   // Ensure data directory exists before proceeding
-  await ensureDataDirExists(dataDir);
+  await ensureAuthDirectory(dataDir);
 
   // Check if CLI is installed
-  const cliInstalled = await isCliInstalled(metadata.cliBinary);
-  if (!cliInstalled) {
+  if (!isCliInstalled(metadata.cliBinary)) {
     displayCliNotInstalledError(metadata);
     throw new Error(`${metadata.name} CLI is not installed.`);
-  }
-
-  if (process.env.CODEMACHINE_SKIP_AUTH === '1') {
-    await writeFile(sentinelPath, '{}', { encoding: 'utf8' });
-    return true;
   }
 
   // Set up XDG environment variables for OpenCode
@@ -106,10 +106,17 @@ export async function ensureAuth(forceLogin = false): Promise<boolean> {
     });
     await proc.exited;
   } catch (error) {
-    if (isCliNotFoundError(error)) {
-      displayCliNotFoundError(metadata, 'auth login');
+    if (isCommandNotFoundError(error)) {
+      console.error(`\n────────────────────────────────────────────────────────────`);
+      console.error(`  ⚠️  ${metadata.name} CLI Not Found`);
+      console.error(`────────────────────────────────────────────────────────────`);
+      console.error(`\n'${metadata.cliBinary} auth login' failed because the CLI is missing.`);
+      console.error(`Please install ${metadata.name} CLI before trying again:\n`);
+      console.error(`  ${metadata.installCommand}\n`);
+      console.error(`────────────────────────────────────────────────────────────\n`);
       throw new Error(`${metadata.name} CLI is not installed.`);
     }
+
     throw error;
   }
 

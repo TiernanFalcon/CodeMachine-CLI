@@ -4,7 +4,9 @@
  * Actions for managing workflow status and checkpoint state.
  */
 
-import type { WorkflowState, WorkflowStatus, LoopState, ChainedState, InputState, RateLimitState, TriggeredAgentState } from "../types"
+import type { WorkflowState, WorkflowStatus, WorkflowPhase, LoopState, ChainedState, InputState, TriggeredAgentState, ControllerState,
+  AutonomousMode, AgentTelemetry, AgentStatus } from "../types"
+import { debug } from "../../../../../../../shared/logging/logger.js"
 
 export type WorkflowActionsContext = {
   getState(): WorkflowState
@@ -13,6 +15,13 @@ export type WorkflowActionsContext = {
 }
 
 export function createWorkflowActions(ctx: WorkflowActionsContext) {
+  function setWorkflowName(name: string): void {
+    const state = ctx.getState()
+    if (state.workflowName === name) return
+    ctx.setState({ ...state, workflowName: name })
+    ctx.notify()
+  }
+
   function setWorkflowStatus(status: WorkflowStatus): void {
     const state = ctx.getState()
     if (state.workflowStatus === status) return
@@ -28,7 +37,7 @@ export function createWorkflowActions(ctx: WorkflowActionsContext) {
     const state = ctx.getState()
     ctx.setState({ ...state, checkpointState: checkpoint })
     if (checkpoint && checkpoint.active) {
-      setWorkflowStatus("checkpoint")
+      setWorkflowStatus("awaiting")
     } else {
       setWorkflowStatus("running")
     }
@@ -37,25 +46,26 @@ export function createWorkflowActions(ctx: WorkflowActionsContext) {
 
   function setInputState(inputState: InputState | null): void {
     const state = ctx.getState()
-    ctx.setState({ ...state, inputState })
-    if (inputState && inputState.active) {
+    const prevQueue = state.inputState?.queuedPrompts
+    const prevIndex = state.inputState?.currentIndex
+
+    // Persist queue from previous state if new state doesn't have one
+    let mergedState = inputState
+    if (inputState && !inputState.queuedPrompts && prevQueue && prevQueue.length > 0) {
+      mergedState = { ...inputState, queuedPrompts: prevQueue, currentIndex: prevIndex }
+    } else if (!inputState && prevQueue && prevQueue.length > 0) {
+      // Even when clearing, preserve queue info for UI display
+      mergedState = { active: false, queuedPrompts: prevQueue, currentIndex: prevIndex }
+    }
+
+    ctx.setState({ ...state, inputState: mergedState })
+    if (mergedState && mergedState.active) {
       // Only show "Paused" for manual pause (no queue), not for chained prompts
-      const hasQueue = inputState.queuedPrompts && inputState.queuedPrompts.length > 0
+      const hasQueue = mergedState.queuedPrompts && mergedState.queuedPrompts.length > 0
       if (!hasQueue) {
         setWorkflowStatus("paused")
       }
       // With queue (chained prompts), keep current status
-    } else {
-      setWorkflowStatus("running")
-    }
-    ctx.notify()
-  }
-
-  function setRateLimitState(rateLimitState: RateLimitState | null): void {
-    const state = ctx.getState()
-    ctx.setState({ ...state, rateLimitState })
-    if (rateLimitState && rateLimitState.active) {
-      setWorkflowStatus("rate_limit_waiting")
     } else {
       setWorkflowStatus("running")
     }
@@ -111,14 +121,14 @@ export function createWorkflowActions(ctx: WorkflowActionsContext) {
     ctx.notify()
   }
 
-  function addUIElement(element: { id: string; text: string; stepIndex: number }): void {
+  function addSeparator(separator: { id: string; text: string; stepIndex: number }): void {
     const state = ctx.getState()
-    const exists = state.uiElements.some((e) => e.id === element.id || e.stepIndex === element.stepIndex)
+    const exists = state.separators.some((s) => s.id === separator.id || s.stepIndex === separator.stepIndex)
     if (exists) return
 
     ctx.setState({
       ...state,
-      uiElements: [...state.uiElements, element],
+      separators: [...state.separators, separator],
     })
     ctx.notify()
   }
@@ -132,24 +142,105 @@ export function createWorkflowActions(ctx: WorkflowActionsContext) {
     ctx.notify()
   }
 
-  function setAutonomousMode(enabled: boolean): void {
+  function setAutonomousMode(enabled: AutonomousMode): void {
     const state = ctx.getState()
     if (state.autonomousMode === enabled) return
     ctx.setState({ ...state, autonomousMode: enabled })
     ctx.notify()
   }
 
+  function setControllerState(controllerState: ControllerState | null): void {
+    const state = ctx.getState()
+    ctx.setState({ ...state, controllerState })
+    ctx.notify()
+  }
+
+  function updateControllerTelemetry(telemetry: Partial<AgentTelemetry>): void {
+    const state = ctx.getState()
+    if (!state.controllerState) return
+
+    const current = state.controllerState.telemetry
+    // Context = input (uncached) + cached tokens
+    const currentContext = (telemetry.tokensIn ?? 0) + (telemetry.cached ?? 0)
+    // Replace telemetry values (like step agent) - shows current context, not accumulated
+    const newTokensIn = currentContext > 0 ? currentContext : current.tokensIn
+    const newTokensOut = telemetry.tokensOut ?? current.tokensOut
+    const newCached = telemetry.cached ?? current.cached
+    // Cost accumulates
+    const newCost = (current.cost ?? 0) + (telemetry.cost ?? 0) || undefined
+
+    debug('[TELEMETRY:5-ACTIONS] [CONTROLLER] updateControllerTelemetry')
+    debug('[TELEMETRY:5-ACTIONS] [CONTROLLER]   INPUT: uncached=%d + cached=%d = context=%d, output=%d',
+      telemetry.tokensIn ?? 0, telemetry.cached ?? 0, currentContext, telemetry.tokensOut ?? 0)
+    debug('[TELEMETRY:5-ACTIONS] [CONTROLLER]   RESULT: context=%d, output=%d (REPLACES previous)', newTokensIn, newTokensOut)
+
+    ctx.setState({
+      ...state,
+      controllerState: {
+        ...state.controllerState,
+        telemetry: {
+          tokensIn: newTokensIn,
+          tokensOut: newTokensOut,
+          cached: newCached,
+          cost: newCost,
+        },
+      },
+    })
+    ctx.notify()
+  }
+
+  function updateControllerStatus(status: AgentStatus): void {
+    const state = ctx.getState()
+    if (!state.controllerState) return
+    if (state.controllerState.status === status) return
+
+    ctx.setState({
+      ...state,
+      controllerState: {
+        ...state.controllerState,
+        status,
+      },
+    })
+    ctx.notify()
+  }
+
+  function updateControllerMonitoring(monitoringId: number): void {
+    const state = ctx.getState()
+    if (!state.controllerState) return
+
+    ctx.setState({
+      ...state,
+      controllerState: {
+        ...state.controllerState,
+        monitoringId,
+      },
+    })
+    ctx.notify()
+  }
+
+  function setWorkflowPhase(phase: WorkflowPhase): void {
+    const state = ctx.getState()
+    if (state.phase === phase) return
+    ctx.setState({ ...state, phase })
+    ctx.notify()
+  }
+
   return {
+    setWorkflowName,
     setWorkflowStatus,
+    setWorkflowPhase,
     setCheckpointState,
     setInputState,
-    setRateLimitState,
     setChainedState,
     setLoopState,
     clearLoopRound,
     addTriggeredAgent,
-    addUIElement,
+    addSeparator,
     logMessage,
     setAutonomousMode,
+    setControllerState,
+    updateControllerTelemetry,
+    updateControllerStatus,
+    updateControllerMonitoring,
   }
 }

@@ -11,7 +11,7 @@ import { useDialog } from "@tui/shared/context/dialog"
 import { useSession } from "@tui/shared/context/session"
 import { SelectMenu } from "@tui/shared/components/select-menu"
 import * as path from "node:path"
-import { getAbsoluteSpecPath, HOME_COMMANDS } from "../config/commands"
+import { HOME_COMMANDS } from "../config/commands"
 
 export interface UseHomeCommandsOptions {
   onStartWorkflow?: () => void
@@ -60,11 +60,10 @@ export function useHomeCommands(options: UseHomeCommandsOptions) {
   }
 
   const handleStartCommand = async () => {
-    const specPath = getAbsoluteSpecPath()
-
     try {
-      const { validateSpecification } = await import("../../../../../workflows/execution/run.js")
-      await validateSpecification(specPath)
+      // Pre-flight check - validates specification if required by template
+      const { checkSpecificationRequired } = await import("../../../../../workflows/preflight.js")
+      await checkSpecificationRequired()
     } catch (error) {
       if (error instanceof Error) {
         toast.show({
@@ -78,7 +77,6 @@ export function useHomeCommands(options: UseHomeCommandsOptions) {
 
     if (options.onStartWorkflow) {
       options.onStartWorkflow()
-      return
     }
   }
 
@@ -128,8 +126,7 @@ export function useHomeCommands(options: UseHomeCommandsOptions) {
     const { registry } = await import("../../../../../infra/engines/index.js")
     const { handleLogin } = await import("../../../../commands/auth.command.js")
 
-    const engines = await registry.getAllAsync()
-    const providers = engines.map((engine) => ({
+    const providers = registry.getAll().map((engine) => ({
       title: engine.metadata.name,
       value: engine.metadata.id,
       description: engine.metadata.description,
@@ -141,7 +138,7 @@ export function useHomeCommands(options: UseHomeCommandsOptions) {
         choices={providers}
         onSelect={async (providerId: string) => {
           const providerName = providers.find((p) => p.value === providerId)?.title || "Provider"
-          const engine = await registry.getAsync(providerId)
+          const engine = registry.get(providerId)
 
           if (!engine) {
             dialog.close()
@@ -182,8 +179,7 @@ export function useHomeCommands(options: UseHomeCommandsOptions) {
     const { registry } = await import("../../../../../infra/engines/index.js")
     const { handleLogout } = await import("../../../../commands/auth.command.js")
 
-    const engines = await registry.getAllAsync()
-    const providers = engines.map((engine) => ({
+    const providers = registry.getAll().map((engine) => ({
       title: engine.metadata.name,
       value: engine.metadata.id,
       description: engine.metadata.description,

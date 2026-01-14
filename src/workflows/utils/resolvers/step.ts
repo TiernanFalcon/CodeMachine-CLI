@@ -30,7 +30,7 @@ export function resolveStep(id: string, overrides: StepOverrides = {}): Workflow
     modelReasoningEffort: overrides.modelReasoningEffort ?? agent.modelReasoningEffort,
     engine: overrides.engine ?? agent.engine, // Override from step or use agent config
     executeOnce: overrides.executeOnce,
-    notCompletedFallback: overrides.notCompletedFallback,
+    interactive: overrides.interactive,
     tracks: overrides.tracks,
     conditions: overrides.conditions,
   };

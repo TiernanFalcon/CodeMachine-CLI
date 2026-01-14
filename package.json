@@ -42,6 +42,7 @@
   },
   "optionalDependencies": {
     "codemachine-linux-x64": "0.8.0",
+    "codemachine-linux-arm64": "0.8.0",
     "codemachine-darwin-arm64": "0.8.0",
     "codemachine-darwin-x64": "0.8.0",
     "codemachine-windows-x64": "0.8.0"
@@ -54,7 +55,7 @@
     "_comment_build": "Production: Build platform-specific executables",
     "build": "bun scripts/build.ts",
     "_comment_quality": "Code Quality: Linting, testing, formatting",
-    "lint": "eslint --max-warnings=0 \"{src,tests}/**/*.{ts,tsx}\"",
+    "lint": "eslint --max-warnings=0 \"src/**/*.{ts,tsx}\"",
     "test": "bun test",
     "test:watch": "bun test --watch",
     "test:coverage": "bun test --coverage",
@@ -67,13 +68,15 @@
   },
   "dependencies": {
     "@clack/prompts": "^0.11.0",
-    "@opentui/core": "^0.1.60",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@opentui/core": "0.1.60",
     "@opentui/solid": "^0.1.60",
     "chalk": "^5.6.2",
     "commander": "^14.0.1",
     "proper-lockfile": "^4.1.2",
     "solid-js": "^1.9.10",
-    "update-notifier": "^7.3.1"
+    "update-notifier": "^7.3.1",
+    "zod": "^3.23.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.36.0",
