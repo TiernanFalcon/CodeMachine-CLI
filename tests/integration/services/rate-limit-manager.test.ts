@@ -8,7 +8,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import { mkdir, rm, readFile } from 'node:fs/promises';
 import * as path from 'node:path';
 import { tmpdir } from 'node:os';
-import { RateLimitManager } from '../../../src/workflows/execution/rate-limit-manager.js';
+import { RateLimitManager } from '../../../src/workflows/step/rate-limit-manager.js';
 
 let testDir: string;
 

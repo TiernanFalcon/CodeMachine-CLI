@@ -8,7 +8,6 @@ import {
   displayCliNotInstalledError,
   isCommandNotFoundError,
   ensureAuthDirectory,
-  createCredentialFile,
   cleanupAuthFiles,
   getNextAuthAction,
   checkCredentialExists,

@@ -156,7 +156,7 @@ export const interactiveHandler: ModeHandler = {
   scenarios: [1, 2, 3, 4, 7, 8],
 
   async handle(context: ModeHandlerContext): Promise<ModeHandlerResult> {
-    const { ctx, scenario, callbacks, fsmState } = context;
+    const { ctx, scenario, callbacks: _callbacks, fsmState } = context;
     const machineCtx = ctx.machine.context;
     const stepIndex = machineCtx.currentStepIndex;
     const step = ctx.moduleSteps[stepIndex];

@@ -7,8 +7,6 @@ import {
   checkCliInstalled,
   displayCliNotInstalledError,
   isCommandNotFoundError,
-  ensureAuthDirectory,
-  createCredentialFile,
   cleanupAuthFiles,
   getNextAuthAction,
 } from '../../core/auth.js';

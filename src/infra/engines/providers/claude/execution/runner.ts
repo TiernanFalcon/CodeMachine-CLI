@@ -13,11 +13,6 @@ import {
   formatCommand,
   formatResult,
   formatStatus,
-  formatDuration,
-  formatCost,
-  formatTokens,
-  addMarker,
-  SYMBOL_BULLET,
 } from '../../../../../shared/formatters/outputMarkers.js';
 
 export interface RunClaudeOptions {

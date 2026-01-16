@@ -5,8 +5,8 @@ import { join } from 'node:path';
 import {
   runWithFallback,
   hasAvailableEngine,
-} from '../../../src/workflows/execution/engine-fallback.js';
-import { RateLimitManager } from '../../../src/workflows/execution/rate-limit-manager.js';
+} from '../../../src/workflows/step/engine-fallback.js';
+import { RateLimitManager } from '../../../src/workflows/step/rate-limit-manager.js';
 import { registry } from '../../../src/infra/engines/index.js';
 import {
   setMockConfig,

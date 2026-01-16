@@ -2,3 +2,6 @@
 # This prevents the SolidJS transform from affecting React/Ink components
 
 # Tests archived to .tests.archive/ (hidden folder, ignored by bun test)
+
+[test]
+preload = ["./tests/setup.ts"]

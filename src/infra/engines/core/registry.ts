@@ -13,6 +13,8 @@ import ccrEngine from '../providers/ccr/index.js';
 import opencodeEngine from '../providers/opencode/index.js';
 import auggieEngine from '../providers/auggie/index.js';
 import mistralEngine from '../providers/mistral/index.js';
+// Mock engine - conditionally imported for testing
+import mockEngine from '../providers/mock/index.js';
 
 /**
  * Engine Registry - Singleton that manages all available engines
@@ -32,7 +34,7 @@ class EngineRegistry {
 
     // Register all known engines
     // To add a new engine: import it above and register it here
-    const engineModules = [
+    const engineModules: EngineModule[] = [
       opencodeEngine,
       claudeEngine,
       codexEngine,
@@ -40,7 +42,8 @@ class EngineRegistry {
       mistralEngine,
       auggieEngine,
       ccrEngine,
-      // Add new engines here
+      // Mock engine conditionally added for testing
+      ...(process.env.CODEMACHINE_ENABLE_MOCK_ENGINE === '1' ? [mockEngine] : []),
     ];
 
     for (const engineModule of engineModules) {

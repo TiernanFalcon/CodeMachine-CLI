@@ -8,7 +8,7 @@
 import { debug } from '../../../shared/logging/logger.js';
 import type { RunnerContext } from '../types.js';
 import type { ModeHandlerResult } from '../modes/types.js';
-import { evaluateOnAdvance, type AdvanceAction } from '../../directives/index.js';
+import { evaluateOnAdvance } from '../../directives/index.js';
 import {
   processPostStepDirectives,
   type PostStepAction,

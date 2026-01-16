@@ -12,10 +12,7 @@ import { debug } from '../../../../../shared/logging/logger.js';
 import type { ConfigScope } from '../../../../mcp/types.js';
 import { expandHomeDir } from '../../../../../shared/utils/index.js';
 import { ENV } from '../config.js';
-import {
-  getServerPath as getWorkflowSignalsPath,
-  getMCPInfraDir,
-} from '../../../../mcp/servers/workflow-signals/config.js';
+import { getServerPath as getWorkflowSignalsPath } from '../../../../mcp/servers/workflow-signals/config.js';
 import { getServerPath as getAgentCoordinationPath } from '../../../../mcp/servers/agent-coordination/config.js';
 
 // ============================================================================

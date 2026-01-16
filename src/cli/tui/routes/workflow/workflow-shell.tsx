@@ -11,6 +11,7 @@ import { BrandingHeader } from "@tui/shared/components/layout/branding-header"
 import { useTheme } from "@tui/shared/context/theme"
 import { useToast } from "@tui/shared/context/toast"
 import { useUIState } from "./context/ui-state"
+import type { AutonomousMode } from "./context/ui-state/types"
 import { AgentTimeline } from "./components/timeline"
 import { OutputWindow, TelemetryBar, StatusFooter } from "./components/output"
 import { useTimer } from "@tui/shared/services"
@@ -111,7 +112,7 @@ export function WorkflowShell(props: WorkflowShellProps) {
     debug('[MODE-CHANGE] Received event: autonomousMode=%s', data.autonomousMode)
     // Validate that the string is a valid AutonomousMode
     if (['true', 'false', 'never', 'always'].includes(data.autonomousMode)) {
-      ui.actions.setAutonomousMode(data.autonomousMode as any)
+      ui.actions.setAutonomousMode(data.autonomousMode as AutonomousMode)
     }
   }
 
@@ -131,7 +132,7 @@ export function WorkflowShell(props: WorkflowShellProps) {
     if (controllerState?.autonomousMode) {
       debug('onMount - setting autonomousMode to %s', controllerState.autonomousMode)
       if (['true', 'false', 'never', 'always'].includes(controllerState.autonomousMode)) {
-        ui.actions.setAutonomousMode(controllerState.autonomousMode as any)
+        ui.actions.setAutonomousMode(controllerState.autonomousMode as AutonomousMode)
       }
     } else {
       debug('onMount - autonomousMode not enabled in config, using default (true)')
@@ -381,7 +382,7 @@ export function WorkflowShell(props: WorkflowShellProps) {
     } catch (err) {
       debug('[TOGGLE] Failed to persist autonomousMode: %s', err)
       // Revert UI state on error
-      ui.actions.setAutonomousMode(currentMode as any)
+      ui.actions.setAutonomousMode(currentMode as AutonomousMode)
       toast.show({ variant: "error", message: "Failed to toggle autonomous mode", duration: 3000 })
     }
   }

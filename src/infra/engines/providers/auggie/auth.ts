@@ -8,7 +8,6 @@ import {
   displayCliNotInstalledError,
   isCommandNotFoundError,
   ensureAuthDirectory,
-  createCredentialFile,
 } from '../../core/auth.js';
 import { metadata } from './metadata.js';
 import { ENV } from './config.js';

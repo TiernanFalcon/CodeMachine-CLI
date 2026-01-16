@@ -141,14 +141,14 @@ async function executeStep(
   );
 
   try {
-    let totalStdout = '';
-    const result = await engine.run({
+    let _totalStdout = '';
+    const _result = await engine.run({
       prompt: compositePrompt,
       workingDir,
       model,
       modelReasoningEffort,
       onData: (chunk) => {
-        totalStdout += chunk;
+        _totalStdout += chunk;
         stdoutLogger(chunk);
       },
       onErrorData: (chunk) => {

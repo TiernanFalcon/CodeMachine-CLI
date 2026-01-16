@@ -238,7 +238,7 @@ export async function handleState(
 async function processResult(
   ctx: RunnerContext,
   result: ModeHandlerResult,
-  callbacks: ModeHandlerCallbacks
+  _callbacks: ModeHandlerCallbacks
 ): Promise<void> {
   switch (result.type) {
     case 'modeSwitch':

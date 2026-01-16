@@ -54,7 +54,7 @@ export interface ControllerPhaseResult {
 export async function runControllerPhase(
   options: ControllerPhaseOptions
 ): Promise<ControllerPhaseResult> {
-  const { cwd, cmRoot, template, emitter, eventBus } = options;
+  const { cwd, cmRoot, template, emitter, eventBus: _eventBus } = options;
 
   debug('[ControllerPhase] Starting controller phase check');
 

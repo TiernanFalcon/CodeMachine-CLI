@@ -47,7 +47,7 @@ export async function shouldSkipStep(
     activeLoop,
     indexManager,
     uniqueAgentId,
-    emitter,
+    emitter: _emitter,
   } = options;
 
   // Non-module steps (separators, etc.) can't be skipped

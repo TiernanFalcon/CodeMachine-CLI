@@ -88,14 +88,14 @@ export async function executeTriggerAgent(options: TriggerExecutionOptions): Pro
 
     const compositePrompt = triggeredAgentTemplate;
 
-    let totalTriggeredStdout = '';
-    const triggeredResult = await engine.run({
+    let _totalTriggeredStdout = '';
+    const _triggeredResult = await engine.run({
       prompt: compositePrompt,
       workingDir: cwd,
       model: triggeredModel,
       modelReasoningEffort: triggeredReasoning,
       onData: (chunk) => {
-        totalTriggeredStdout += chunk;
+        _totalTriggeredStdout += chunk;
         if (loggerService && monitoringAgentId !== undefined) {
           loggerService.write(monitoringAgentId, chunk);
         }
